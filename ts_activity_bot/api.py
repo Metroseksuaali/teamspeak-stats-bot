@@ -13,7 +13,7 @@ from datetime import datetime
 from typing import Optional
 
 import uvicorn
-from fastapi import Depends, FastAPI, HTTPException, Query, Security
+from fastapi import Depends, FastAPI, HTTPException, Query, Response, Security
 from fastapi.security import APIKeyHeader, APIKeyQuery
 from pydantic import BaseModel
 
@@ -21,6 +21,7 @@ from ts_activity_bot.config import get_config
 from ts_activity_bot.db import Database
 from ts_activity_bot.stats import StatsCalculator
 from ts_activity_bot.graphql_schema import create_graphql_router
+from ts_activity_bot.metrics import create_metrics_collector
 
 # Initialize config and stats
 try:
@@ -39,6 +40,9 @@ logger = logging.getLogger(__name__)
 # Initialize stats calculator
 stats_calc = StatsCalculator(config.database.path, config.polling.interval_seconds)
 db = Database(config.database.path)
+
+# Initialize Prometheus metrics collector
+metrics_collector = create_metrics_collector(config)
 
 # Initialize FastAPI
 app = FastAPI(
@@ -278,6 +282,31 @@ async def health_check():
             "database": "error",
             "last_snapshot": None
         }
+
+
+@app.get("/metrics")
+async def metrics():
+    """
+    Prometheus metrics endpoint (no authentication required).
+
+    Exposes TeamSpeak statistics in Prometheus format for monitoring and alerting.
+    Configure your Prometheus instance to scrape this endpoint.
+
+    Example Prometheus scrape config:
+    ```yaml
+    scrape_configs:
+      - job_name: 'teamspeak-stats'
+        static_configs:
+          - targets: ['localhost:8000']
+    ```
+    """
+    try:
+        from prometheus_client import CONTENT_TYPE_LATEST
+        metrics_data = metrics_collector.get_metrics()
+        return Response(content=metrics_data, media_type=CONTENT_TYPE_LATEST)
+    except Exception as e:
+        logger.error(f"Error generating metrics: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/stats/summary", response_model=Summary)

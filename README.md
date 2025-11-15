@@ -30,7 +30,9 @@ A production-ready Python bot for tracking and analyzing user activity on **Team
 - Exponential backoff retry logic
 - Health checks & monitoring
 - Configurable data retention
-- SQLite database with automatic schema migration (v2→v3)
+- **Multi-database support**: SQLite (default) or PostgreSQL for large-scale deployments
+- **Prometheus metrics endpoint** for monitoring and alerting
+- Automatic schema migration (v3)
 - Channel name caching for improved performance
 - User aggregates for faster historical queries
 
@@ -185,12 +187,36 @@ polling:
   interval_seconds: 30                        # Poll every 30 seconds
 
 database:
+  backend: sqlite                             # sqlite or postgresql
+  path: ./data/ts_activity.sqlite             # SQLite database path
+  # connection_string: postgresql://user:pass@host:5432/dbname  # For PostgreSQL
   retention_days: null                        # null = keep forever, or set days
 
 api:
   api_key: "SECRET_KEY"                       # Protect your stats!
   port: 8080
 ```
+
+#### Database Backends
+
+**SQLite** (default) - Simple, file-based, perfect for most deployments:
+```yaml
+database:
+  backend: sqlite
+  path: ./data/ts_activity.sqlite
+```
+
+**PostgreSQL** - For large-scale deployments with high concurrency:
+```yaml
+database:
+  backend: postgresql
+  connection_string: postgresql://user:password@localhost:5432/teamspeak_stats
+```
+
+PostgreSQL requirements:
+- Install psycopg2: `pip install psycopg2-binary`
+- Supports connection pooling for better performance
+- Recommended for >100k snapshots or high API request rates
 
 ---
 
@@ -285,6 +311,7 @@ curl http://localhost:8080/stats/summary?api_key=YOUR_API_KEY
 | Endpoint | Description |
 |----------|-------------|
 | `GET /health` | Health check (no auth required) |
+| `GET /metrics` | **Prometheus metrics (no auth required)** |
 | `GET /stats/summary?days=7` | Overall statistics summary |
 | `GET /stats/top-users?days=7&limit=10` | Top users by online time |
 | `GET /stats/user/{uid}?days=30` | Detailed user statistics with favorite channels |
@@ -342,6 +369,69 @@ When `api.docs_enabled: true` in config:
 - **Swagger UI**: http://localhost:8080/docs
 - **ReDoc**: http://localhost:8080/redoc
 - **GraphQL Playground**: http://localhost:8080/graphql
+
+---
+
+## Prometheus Metrics
+
+**Endpoint**: `GET /metrics` (no authentication required)
+
+Export TeamSpeak statistics in Prometheus format for monitoring and alerting. The `/metrics` endpoint provides real-time metrics compatible with Prometheus scraping.
+
+### Available Metrics
+
+**User Metrics:**
+- `ts_users_total` - Total unique users tracked
+- `ts_users_online` - Currently online users
+- `ts_users_online_active` - Online and active users (not idle/away)
+- `ts_peak_users` - Peak concurrent users (7 days)
+- `ts_avg_users_online` - Average users online (7 days)
+
+**User Lifetime Value:**
+- `ts_ltv_power_users` - Number of power users (LTV 80-100)
+- `ts_ltv_regular_users` - Number of regular users (LTV 50-79)
+- `ts_ltv_casual_users` - Number of casual users (LTV 0-49)
+- `ts_ltv_avg_score` - Average LTV score across all users
+
+**Channel Metrics:**
+- `ts_channels_total` - Total number of channels
+- `ts_channel_visits{channel_id, channel_name}` - Visits per channel
+- `ts_channel_unique_users{channel_id, channel_name}` - Unique users per channel
+
+**System Metrics:**
+- `ts_database_size_bytes` - Database file size
+- `ts_snapshots_total` - Total snapshots collected
+
+### Prometheus Configuration
+
+Add to your `prometheus.yml`:
+
+```yaml
+scrape_configs:
+  - job_name: 'teamspeak-stats'
+    static_configs:
+      - targets: ['localhost:8080']
+    scrape_interval: 60s
+```
+
+### Example Grafana Alerts
+
+**Low activity alert:**
+```yaml
+- alert: TeamSpeakLowActivity
+  expr: ts_users_online < 2
+  for: 1h
+  annotations:
+    summary: "TeamSpeak server has low activity"
+```
+
+**Power user growth:**
+```yaml
+- alert: PowerUserGrowth
+  expr: rate(ts_ltv_power_users[1d]) > 5
+  annotations:
+    summary: "Significant growth in power users"
+```
 
 ---
 
