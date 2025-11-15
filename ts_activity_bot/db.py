@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 
 SCHEMA_SQL = """
 -- Main snapshots table (one row per poll)
@@ -39,12 +39,25 @@ CREATE TABLE IF NOT EXISTS client_snapshots (
     nickname TEXT NOT NULL,
     channel_id INTEGER NOT NULL,
     idle_ms INTEGER,
+    -- Away status tracking
+    is_away INTEGER DEFAULT 0,
+    away_message TEXT,
+    -- Voice/mute status tracking
+    is_talking INTEGER DEFAULT 0,
+    input_muted INTEGER DEFAULT 0,
+    output_muted INTEGER DEFAULT 0,
+    is_recording INTEGER DEFAULT 0,
+    -- Server groups (comma-separated IDs)
+    server_groups TEXT,
+    -- Connection info
+    connected_time INTEGER,
     FOREIGN KEY (snapshot_id) REFERENCES snapshots(id) ON DELETE CASCADE
 );
 
 CREATE INDEX IF NOT EXISTS idx_client_uid_snapshot ON client_snapshots(client_uid, snapshot_id);
 CREATE INDEX IF NOT EXISTS idx_snapshot_id ON client_snapshots(snapshot_id);
 CREATE INDEX IF NOT EXISTS idx_client_uid ON client_snapshots(client_uid);
+CREATE INDEX IF NOT EXISTS idx_channel_id ON client_snapshots(channel_id);
 
 -- Metadata table for versioning and settings
 CREATE TABLE IF NOT EXISTS metadata (
@@ -131,11 +144,28 @@ class Database:
             from_version: Current schema version
             to_version: Target schema version
         """
-        # Future migrations will be added here
-        # Example:
-        # if from_version < 2:
-        #     conn.execute("ALTER TABLE snapshots ADD COLUMN server_uptime INTEGER")
-        #     conn.execute("UPDATE metadata SET value = '2' WHERE key = 'schema_version'")
+        cursor = conn.cursor()
+
+        # Migration from version 1 to 2: Add new tracking fields
+        if from_version < 2:
+            logger.info("Migrating schema v1 -> v2: Adding away/voice/groups tracking")
+
+            # Add new columns to client_snapshots
+            cursor.execute("ALTER TABLE client_snapshots ADD COLUMN is_away INTEGER DEFAULT 0")
+            cursor.execute("ALTER TABLE client_snapshots ADD COLUMN away_message TEXT")
+            cursor.execute("ALTER TABLE client_snapshots ADD COLUMN is_talking INTEGER DEFAULT 0")
+            cursor.execute("ALTER TABLE client_snapshots ADD COLUMN input_muted INTEGER DEFAULT 0")
+            cursor.execute("ALTER TABLE client_snapshots ADD COLUMN output_muted INTEGER DEFAULT 0")
+            cursor.execute("ALTER TABLE client_snapshots ADD COLUMN is_recording INTEGER DEFAULT 0")
+            cursor.execute("ALTER TABLE client_snapshots ADD COLUMN server_groups TEXT")
+            cursor.execute("ALTER TABLE client_snapshots ADD COLUMN connected_time INTEGER")
+
+            # Add index for channel_id
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_channel_id ON client_snapshots(channel_id)")
+
+            # Update schema version
+            cursor.execute("UPDATE metadata SET value = '2' WHERE key = 'schema_version'")
+            logger.info("Schema migration v1 -> v2 completed")
 
         logger.info(f"Schema migration completed: {from_version} -> {to_version}")
 
@@ -181,7 +211,19 @@ class Database:
                     client.get('client_database_id'),
                     client.get('client_nickname', 'Unknown'),
                     client.get('cid', 0),
-                    client.get('client_idle_time')
+                    client.get('client_idle_time'),
+                    # Away status
+                    1 if client.get('client_away', 0) == 1 else 0,
+                    client.get('client_away_message', ''),
+                    # Voice/mute status
+                    1 if client.get('client_is_talker', 0) == 1 else 0,
+                    1 if client.get('client_input_muted', 0) == 1 else 0,
+                    1 if client.get('client_output_muted', 0) == 1 else 0,
+                    1 if client.get('client_is_recording', 0) == 1 else 0,
+                    # Server groups (comma-separated)
+                    client.get('client_servergroups', ''),
+                    # Connection time
+                    client.get('connection_connected_time')
                 )
                 for client in clients
             ]
@@ -189,8 +231,10 @@ class Database:
             cursor.executemany(
                 """
                 INSERT INTO client_snapshots
-                (snapshot_id, client_uid, client_database_id, nickname, channel_id, idle_ms)
-                VALUES (?, ?, ?, ?, ?, ?)
+                (snapshot_id, client_uid, client_database_id, nickname, channel_id, idle_ms,
+                 is_away, away_message, is_talking, input_muted, output_muted, is_recording,
+                 server_groups, connected_time)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 client_data
             )

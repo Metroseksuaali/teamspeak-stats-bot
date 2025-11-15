@@ -41,9 +41,9 @@ db = Database(config.database.path)
 
 # Initialize FastAPI
 app = FastAPI(
-    title="TeamSpeak 6 Activity Stats API",
-    description="REST API for querying TeamSpeak 6 server activity statistics",
-    version="1.0.0",
+    title="TeamSpeak Activity Stats API",
+    description="REST API for querying TeamSpeak 3 (3.13+) and TeamSpeak 6 server activity statistics",
+    version="2.0.0",
     docs_url="/docs" if config.api.docs_enabled else None,
     redoc_url="/redoc" if config.api.docs_enabled else None
 )
@@ -131,6 +131,15 @@ class OnlineUser(BaseModel):
     channel_id: int
     idle_ms: Optional[int]
     idle_minutes: float
+    is_away: bool
+    away_message: str
+    is_talking: bool
+    input_muted: bool
+    output_muted: bool
+    is_recording: bool
+    server_groups: list[str]
+    connected_time: Optional[int]
+    connected_hours: float
 
 
 class Summary(BaseModel):
@@ -149,6 +158,68 @@ class DatabaseStats(BaseModel):
     first_snapshot_timestamp: Optional[int]
     last_snapshot_timestamp: Optional[int]
     schema_version: str
+
+
+class AwayUser(BaseModel):
+    client_uid: str
+    nickname: str
+    total_samples: int
+    away_count: int
+    away_percentage: float
+    last_away_message: str
+
+
+class AwayStats(BaseModel):
+    period_days: Optional[int]
+    total_samples: int
+    away_samples: int
+    away_percentage: float
+    top_away_users: list[AwayUser]
+
+
+class TopRecorder(BaseModel):
+    client_uid: str
+    nickname: str
+    recording_count: int
+    recording_percentage: float
+
+
+class MuteStats(BaseModel):
+    period_days: Optional[int]
+    total_samples: int
+    mic_muted_percentage: float
+    speaker_muted_percentage: float
+    recording_percentage: float
+    talking_percentage: float
+    top_recorders: list[TopRecorder]
+
+
+class ServerGroup(BaseModel):
+    group_id: str
+    unique_members: int
+    total_samples: int
+
+
+class ChannelHopper(BaseModel):
+    client_uid: str
+    nickname: str
+    total_samples: int
+    channel_switches: int
+    switches_per_hour: float
+
+
+class Reconnector(BaseModel):
+    client_uid: str
+    nickname: str
+    session_count: int
+    avg_session_length_minutes: float
+
+
+class ConnectionPatterns(BaseModel):
+    period_days: Optional[int]
+    total_users: int
+    avg_online_time_hours: float
+    top_reconnectors: list[Reconnector]
 
 
 # Endpoints
@@ -332,10 +403,78 @@ async def get_database_stats(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.get("/stats/away", response_model=AwayStats)
+async def get_away_stats(
+    days: Optional[int] = Query(7, description="Number of days to analyze"),
+    limit: int = Query(10, ge=1, le=100, description="Number of users to show"),
+    api_key: str = Depends(verify_api_key)
+):
+    """Get AFK/Away status statistics."""
+    try:
+        return stats_calc.get_away_stats(days=days, limit=limit)
+    except Exception as e:
+        logger.error(f"Error getting away stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/stats/mute", response_model=MuteStats)
+async def get_mute_stats(
+    days: Optional[int] = Query(7, description="Number of days to analyze"),
+    api_key: str = Depends(verify_api_key)
+):
+    """Get microphone/speaker mute and recording statistics."""
+    try:
+        return stats_calc.get_mute_stats(days=days)
+    except Exception as e:
+        logger.error(f"Error getting mute stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/stats/server-groups", response_model=list[ServerGroup])
+async def get_server_groups(
+    days: Optional[int] = Query(7, description="Number of days to analyze"),
+    api_key: str = Depends(verify_api_key)
+):
+    """Get server group membership statistics."""
+    try:
+        return stats_calc.get_server_group_stats(days=days)
+    except Exception as e:
+        logger.error(f"Error getting server group stats: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/stats/channel-hoppers", response_model=list[ChannelHopper])
+async def get_channel_hoppers(
+    days: Optional[int] = Query(7, description="Number of days to analyze"),
+    limit: int = Query(10, ge=1, le=100, description="Number of users to show"),
+    api_key: str = Depends(verify_api_key)
+):
+    """Get users who switch channels most frequently."""
+    try:
+        return stats_calc.get_channel_switches(days=days, limit=limit)
+    except Exception as e:
+        logger.error(f"Error getting channel hoppers: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/stats/connection-patterns", response_model=ConnectionPatterns)
+async def get_connection_patterns(
+    days: Optional[int] = Query(7, description="Number of days to analyze"),
+    limit: int = Query(10, ge=1, le=100, description="Number of users to show"),
+    api_key: str = Depends(verify_api_key)
+):
+    """Get connection/disconnection patterns and session statistics."""
+    try:
+        return stats_calc.get_connection_patterns(days=days, limit=limit)
+    except Exception as e:
+        logger.error(f"Error getting connection patterns: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 def main():
     """Run the API server."""
     logger.info("=" * 60)
-    logger.info("TeamSpeak 6 Activity Stats Bot - API Server")
+    logger.info("TeamSpeak Activity Stats Bot - API Server")
     logger.info("=" * 60)
     logger.info(f"Host: {config.api.host}")
     logger.info(f"Port: {config.api.port}")

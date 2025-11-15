@@ -454,10 +454,10 @@ class StatsCalculator:
 
     def get_online_now(self) -> List[Dict]:
         """
-        Get currently online users (from last snapshot).
+        Get currently online users (from last snapshot) with detailed status.
 
         Returns:
-            list: Users from most recent snapshot
+            list: Users from most recent snapshot with all tracked fields
         """
         query = """
         SELECT
@@ -465,6 +465,14 @@ class StatsCalculator:
             cs.nickname,
             cs.channel_id,
             cs.idle_ms,
+            cs.is_away,
+            cs.away_message,
+            cs.is_talking,
+            cs.input_muted,
+            cs.output_muted,
+            cs.is_recording,
+            cs.server_groups,
+            cs.connected_time,
             s.timestamp
         FROM client_snapshots cs
         JOIN snapshots s ON cs.snapshot_id = s.id
@@ -483,6 +491,15 @@ class StatsCalculator:
                 'channel_id': row['channel_id'],
                 'idle_ms': row['idle_ms'],
                 'idle_minutes': round(row['idle_ms'] / 60000, 2) if row['idle_ms'] else 0,
+                'is_away': bool(row['is_away']),
+                'away_message': row['away_message'] or '',
+                'is_talking': bool(row['is_talking']),
+                'input_muted': bool(row['input_muted']),
+                'output_muted': bool(row['output_muted']),
+                'is_recording': bool(row['is_recording']),
+                'server_groups': row['server_groups'].split(',') if row['server_groups'] else [],
+                'connected_time': row['connected_time'],
+                'connected_hours': round(row['connected_time'] / 3600, 2) if row['connected_time'] else 0,
                 'snapshot_time': row['timestamp']
             }
             for row in cursor.fetchall()
@@ -541,4 +558,368 @@ class StatsCalculator:
             'avg_users_online': round(avg_clients, 2),
             'max_users_online': max_clients,
             'unique_users': unique_users
+        }
+
+    def get_away_stats(self, days: Optional[int] = 7, limit: int = 10) -> Dict:
+        """
+        Get AFK/Away status statistics.
+
+        Args:
+            days: Number of days to analyze
+            limit: Number of top away users to return
+
+        Returns:
+            dict: Away statistics including top away users and percentages
+        """
+        start_time, end_time = self._get_time_range(days)
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Overall away percentage
+        cursor.execute("""
+            SELECT
+                COUNT(*) as total_samples,
+                SUM(CASE WHEN is_away = 1 THEN 1 ELSE 0 END) as away_samples
+            FROM client_snapshots cs
+            JOIN snapshots s ON cs.snapshot_id = s.id
+            WHERE s.timestamp BETWEEN ? AND ?
+        """, (start_time, end_time))
+        row = cursor.fetchone()
+        total_samples = row['total_samples']
+        away_samples = row['away_samples']
+        away_percentage = round((away_samples / total_samples * 100) if total_samples > 0 else 0, 2)
+
+        # Top away users (users who are away most often)
+        cursor.execute("""
+            SELECT
+                client_uid,
+                nickname,
+                COUNT(*) as total_samples,
+                SUM(CASE WHEN is_away = 1 THEN 1 ELSE 0 END) as away_count,
+                away_message
+            FROM client_snapshots cs
+            JOIN snapshots s ON cs.snapshot_id = s.id
+            WHERE s.timestamp BETWEEN ? AND ? AND away_message IS NOT NULL AND away_message != ''
+            GROUP BY client_uid
+            HAVING total_samples > 10
+            ORDER BY away_count DESC
+            LIMIT ?
+        """, (start_time, end_time, limit))
+
+        top_away_users = [
+            {
+                'client_uid': row['client_uid'],
+                'nickname': row['nickname'],
+                'total_samples': row['total_samples'],
+                'away_count': row['away_count'],
+                'away_percentage': round((row['away_count'] / row['total_samples'] * 100), 2),
+                'last_away_message': row['away_message']
+            }
+            for row in cursor.fetchall()
+        ]
+
+        conn.close()
+
+        return {
+            'period_days': days,
+            'total_samples': total_samples,
+            'away_samples': away_samples,
+            'away_percentage': away_percentage,
+            'top_away_users': top_away_users
+        }
+
+    def get_mute_stats(self, days: Optional[int] = 7) -> Dict:
+        """
+        Get microphone/speaker mute and recording statistics.
+
+        Args:
+            days: Number of days to analyze
+
+        Returns:
+            dict: Mute/recording statistics
+        """
+        start_time, end_time = self._get_time_range(days)
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Overall mute statistics
+        cursor.execute("""
+            SELECT
+                COUNT(*) as total_samples,
+                SUM(CASE WHEN input_muted = 1 THEN 1 ELSE 0 END) as mic_muted_samples,
+                SUM(CASE WHEN output_muted = 1 THEN 1 ELSE 0 END) as speaker_muted_samples,
+                SUM(CASE WHEN is_recording = 1 THEN 1 ELSE 0 END) as recording_samples,
+                SUM(CASE WHEN is_talking = 1 THEN 1 ELSE 0 END) as talking_samples
+            FROM client_snapshots cs
+            JOIN snapshots s ON cs.snapshot_id = s.id
+            WHERE s.timestamp BETWEEN ? AND ?
+        """, (start_time, end_time))
+        row = cursor.fetchone()
+
+        total = row['total_samples']
+        mic_muted_pct = round((row['mic_muted_samples'] / total * 100) if total > 0 else 0, 2)
+        speaker_muted_pct = round((row['speaker_muted_samples'] / total * 100) if total > 0 else 0, 2)
+        recording_pct = round((row['recording_samples'] / total * 100) if total > 0 else 0, 2)
+        talking_pct = round((row['talking_samples'] / total * 100) if total > 0 else 0, 2)
+
+        # Users who record most often
+        cursor.execute("""
+            SELECT
+                client_uid,
+                nickname,
+                COUNT(*) as total_samples,
+                SUM(CASE WHEN is_recording = 1 THEN 1 ELSE 0 END) as recording_count
+            FROM client_snapshots cs
+            JOIN snapshots s ON cs.snapshot_id = s.id
+            WHERE s.timestamp BETWEEN ? AND ?
+            GROUP BY client_uid
+            HAVING recording_count > 0
+            ORDER BY recording_count DESC
+            LIMIT 10
+        """, (start_time, end_time))
+
+        top_recorders = [
+            {
+                'client_uid': row['client_uid'],
+                'nickname': row['nickname'],
+                'recording_count': row['recording_count'],
+                'recording_percentage': round((row['recording_count'] / row['total_samples'] * 100), 2)
+            }
+            for row in cursor.fetchall()
+        ]
+
+        conn.close()
+
+        return {
+            'period_days': days,
+            'total_samples': total,
+            'mic_muted_percentage': mic_muted_pct,
+            'speaker_muted_percentage': speaker_muted_pct,
+            'recording_percentage': recording_pct,
+            'talking_percentage': talking_pct,
+            'top_recorders': top_recorders
+        }
+
+    def get_server_group_stats(self, days: Optional[int] = 7) -> List[Dict]:
+        """
+        Get server group membership statistics.
+
+        Args:
+            days: Number of days to analyze
+
+        Returns:
+            list: Server groups with member counts and activity
+        """
+        start_time, end_time = self._get_time_range(days)
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Get all unique group IDs and their stats
+        cursor.execute("""
+            SELECT
+                server_groups,
+                COUNT(DISTINCT client_uid) as unique_members,
+                COUNT(*) as total_samples
+            FROM client_snapshots cs
+            JOIN snapshots s ON cs.snapshot_id = s.id
+            WHERE s.timestamp BETWEEN ? AND ?
+              AND server_groups IS NOT NULL
+              AND server_groups != ''
+            GROUP BY server_groups
+            ORDER BY unique_members DESC
+        """, (start_time, end_time))
+
+        # Parse comma-separated groups
+        group_stats = {}
+        for row in cursor.fetchall():
+            groups_str = row['server_groups']
+            if groups_str:
+                # Split comma-separated group IDs
+                group_ids = groups_str.split(',')
+                for gid in group_ids:
+                    gid = gid.strip()
+                    if gid:
+                        if gid not in group_stats:
+                            group_stats[gid] = {'unique_members': 0, 'total_samples': 0}
+                        group_stats[gid]['unique_members'] += row['unique_members']
+                        group_stats[gid]['total_samples'] += row['total_samples']
+
+        conn.close()
+
+        results = [
+            {
+                'group_id': gid,
+                'unique_members': stats['unique_members'],
+                'total_samples': stats['total_samples']
+            }
+            for gid, stats in sorted(group_stats.items(), key=lambda x: x[1]['unique_members'], reverse=True)
+        ]
+
+        return results
+
+    def get_channel_switches(self, days: Optional[int] = 7, limit: int = 10) -> List[Dict]:
+        """
+        Detect and count channel switches for users.
+
+        Args:
+            days: Number of days to analyze
+            limit: Number of top channel hoppers to return
+
+        Returns:
+            list: Users who switch channels most frequently
+        """
+        start_time, end_time = self._get_time_range(days)
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # This query detects channel switches by comparing consecutive snapshots
+        # We use LAG() window function to get previous channel_id
+        query = """
+        WITH channel_changes AS (
+            SELECT
+                client_uid,
+                nickname,
+                channel_id,
+                LAG(channel_id) OVER (
+                    PARTITION BY client_uid
+                    ORDER BY s.timestamp
+                ) as prev_channel_id
+            FROM client_snapshots cs
+            JOIN snapshots s ON cs.snapshot_id = s.id
+            WHERE s.timestamp BETWEEN ? AND ?
+        )
+        SELECT
+            client_uid,
+            nickname,
+            COUNT(*) as total_samples,
+            SUM(CASE WHEN channel_id != prev_channel_id AND prev_channel_id IS NOT NULL THEN 1 ELSE 0 END) as channel_switches
+        FROM channel_changes
+        GROUP BY client_uid
+        HAVING channel_switches > 0
+        ORDER BY channel_switches DESC
+        LIMIT ?
+        """
+
+        cursor.execute(query, (start_time, end_time, limit))
+
+        results = [
+            {
+                'client_uid': row['client_uid'],
+                'nickname': row['nickname'],
+                'total_samples': row['total_samples'],
+                'channel_switches': row['channel_switches'],
+                'switches_per_hour': round(
+                    (row['channel_switches'] / (row['total_samples'] * self.poll_interval / 3600)),
+                    2
+                )
+            }
+            for row in cursor.fetchall()
+        ]
+
+        conn.close()
+        return results
+
+    def get_connection_patterns(self, days: Optional[int] = 7, limit: int = 10) -> Dict:
+        """
+        Analyze connection patterns (connect/disconnect frequency, session length).
+
+        Args:
+            days: Number of days to analyze
+            limit: Number of users to include in top lists
+
+        Returns:
+            dict: Connection pattern statistics
+        """
+        start_time, end_time = self._get_time_range(days)
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        # Detect sessions by finding gaps in snapshots
+        # A gap > 2 * poll_interval indicates disconnect/reconnect
+        query = """
+        WITH snapshot_gaps AS (
+            SELECT
+                client_uid,
+                nickname,
+                s.timestamp,
+                LAG(s.timestamp) OVER (
+                    PARTITION BY client_uid
+                    ORDER BY s.timestamp
+                ) as prev_timestamp
+            FROM client_snapshots cs
+            JOIN snapshots s ON cs.snapshot_id = s.id
+            WHERE s.timestamp BETWEEN ? AND ?
+        ),
+        sessions AS (
+            SELECT
+                client_uid,
+                nickname,
+                SUM(CASE
+                    WHEN prev_timestamp IS NULL OR (timestamp - prev_timestamp) > (? * 2)
+                    THEN 1
+                    ELSE 0
+                END) as session_count,
+                COUNT(*) as total_samples
+            FROM snapshot_gaps
+            GROUP BY client_uid
+        )
+        SELECT
+            client_uid,
+            nickname,
+            session_count,
+            total_samples,
+            CAST(total_samples AS FLOAT) / session_count as avg_samples_per_session
+        FROM sessions
+        WHERE session_count > 0
+        ORDER BY session_count DESC
+        LIMIT ?
+        """
+
+        cursor.execute(query, (start_time, end_time, self.poll_interval, limit))
+
+        top_reconnectors = [
+            {
+                'client_uid': row['client_uid'],
+                'nickname': row['nickname'],
+                'session_count': row['session_count'],
+                'avg_session_length_minutes': round(
+                    (row['avg_samples_per_session'] * self.poll_interval / 60),
+                    2
+                )
+            }
+            for row in cursor.fetchall()
+        ]
+
+        # Overall session statistics
+        cursor.execute("""
+            SELECT
+                COUNT(DISTINCT client_uid) as total_users,
+                AVG(total_samples) as avg_samples_per_user
+            FROM (
+                SELECT client_uid, COUNT(*) as total_samples
+                FROM client_snapshots cs
+                JOIN snapshots s ON cs.snapshot_id = s.id
+                WHERE s.timestamp BETWEEN ? AND ?
+                GROUP BY client_uid
+            )
+        """, (start_time, end_time))
+
+        row = cursor.fetchone()
+        avg_online_time_hours = round(
+            (row['avg_samples_per_user'] * self.poll_interval / 3600) if row['avg_samples_per_user'] else 0,
+            2
+        )
+
+        conn.close()
+
+        return {
+            'period_days': days,
+            'total_users': row['total_users'],
+            'avg_online_time_hours': avg_online_time_hours,
+            'top_reconnectors': top_reconnectors
         }
