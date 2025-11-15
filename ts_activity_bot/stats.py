@@ -959,7 +959,18 @@ class StatsCalculator:
         cursor = conn.cursor()
 
         query = """
-        WITH user_metrics AS (
+        WITH session_gaps AS (
+            -- First calculate LAG without aggregation
+            SELECT
+                cs.client_uid,
+                s.timestamp,
+                LAG(s.timestamp) OVER (PARTITION BY cs.client_uid ORDER BY s.timestamp) as prev_timestamp
+            FROM client_snapshots cs
+            JOIN snapshots s ON cs.snapshot_id = s.id
+            WHERE s.timestamp BETWEEN ? AND ?
+        ),
+        user_metrics AS (
+            -- Then aggregate the results
             SELECT
                 cs.client_uid,
                 MAX(cs.nickname) as nickname,
@@ -970,13 +981,14 @@ class StatsCalculator:
                 AVG(cs.idle_ms) as avg_idle_ms,
                 MIN(s.timestamp) as first_seen,
                 MAX(s.timestamp) as last_seen,
-                -- Calculate session count (gaps > 2 * poll interval)
-                SUM(CASE
-                    WHEN s.timestamp - LAG(s.timestamp) OVER (PARTITION BY cs.client_uid ORDER BY s.timestamp) > (? * 2)
-                        OR LAG(s.timestamp) OVER (PARTITION BY cs.client_uid ORDER BY s.timestamp) IS NULL
-                    THEN 1
-                    ELSE 0
-                END) as session_count
+                -- Calculate session count from session_gaps
+                (
+                    SELECT COUNT(*)
+                    FROM session_gaps sg
+                    WHERE sg.client_uid = cs.client_uid
+                      AND (sg.prev_timestamp IS NULL
+                           OR sg.timestamp - sg.prev_timestamp > (? * 2))
+                ) as session_count
             FROM client_snapshots cs
             JOIN snapshots s ON cs.snapshot_id = s.id
             WHERE s.timestamp BETWEEN ? AND ?
@@ -1010,7 +1022,7 @@ class StatsCalculator:
         LIMIT ?
         """
 
-        cursor.execute(query, (self.poll_interval, start_time, end_time, limit))
+        cursor.execute(query, (start_time, end_time, self.poll_interval, start_time, end_time, limit))
 
         results = []
         for row in cursor.fetchall():
