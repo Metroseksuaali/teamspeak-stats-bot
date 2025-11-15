@@ -212,6 +212,43 @@ class TeamSpeakQueryClient:
             logger.error(f"Failed to fetch server info: {e}")
             raise
 
+    def fetch_channellist(self) -> List[Dict[str, any]]:
+        """
+        Fetch list of all channels on the server.
+
+        Returns:
+            list: List of channel dictionaries with fields:
+                - cid (int): Channel ID
+                - pid (int): Parent channel ID (0 = root)
+                - channel_name (str): Channel name
+                - channel_order (int): Sort order
+                - total_clients (int): Number of clients in channel
+                - channel_maxclients (int): Max clients allowed
+                - channel_codec (int): Audio codec
+                - channel_flag_permanent (int): Is permanent channel
+
+        Example response:
+            [
+                {
+                    "cid": 1,
+                    "pid": 0,
+                    "channel_name": "Lobby",
+                    "channel_order": 0,
+                    "total_clients": 5,
+                    "channel_maxclients": -1
+                }
+            ]
+        """
+        try:
+            channels = self._make_request('channellist')
+
+            logger.info(f"Fetched {len(channels)} channels from TeamSpeak server")
+            return channels
+
+        except Exception as e:
+            logger.error(f"Failed to fetch channellist: {e}")
+            raise
+
 
 def create_client(config: TeamspeakConfig) -> TeamSpeakQueryClient:
     """

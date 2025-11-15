@@ -17,7 +17,7 @@ from typing import Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3
 
 SCHEMA_SQL = """
 -- Main snapshots table (one row per poll)
@@ -58,6 +58,40 @@ CREATE INDEX IF NOT EXISTS idx_client_uid_snapshot ON client_snapshots(client_ui
 CREATE INDEX IF NOT EXISTS idx_snapshot_id ON client_snapshots(snapshot_id);
 CREATE INDEX IF NOT EXISTS idx_client_uid ON client_snapshots(client_uid);
 CREATE INDEX IF NOT EXISTS idx_channel_id ON client_snapshots(channel_id);
+
+-- Channel metadata cache
+CREATE TABLE IF NOT EXISTS channels (
+    channel_id INTEGER PRIMARY KEY,
+    channel_name TEXT NOT NULL,
+    parent_channel_id INTEGER,
+    channel_order INTEGER,
+    total_clients INTEGER DEFAULT 0,
+    last_updated INTEGER NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_channels_parent ON channels(parent_channel_id);
+
+-- User daily aggregates for faster queries
+CREATE TABLE IF NOT EXISTS user_aggregates (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    client_uid TEXT NOT NULL,
+    date TEXT NOT NULL, -- YYYY-MM-DD format
+    nickname TEXT NOT NULL,
+    total_samples INTEGER NOT NULL,
+    online_seconds INTEGER NOT NULL,
+    avg_idle_ms INTEGER,
+    most_visited_channel_id INTEGER,
+    is_away_count INTEGER DEFAULT 0,
+    is_talking_count INTEGER DEFAULT 0,
+    input_muted_count INTEGER DEFAULT 0,
+    output_muted_count INTEGER DEFAULT 0,
+    is_recording_count INTEGER DEFAULT 0,
+    UNIQUE(client_uid, date)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_aggregates_uid ON user_aggregates(client_uid);
+CREATE INDEX IF NOT EXISTS idx_user_aggregates_date ON user_aggregates(date);
+CREATE INDEX IF NOT EXISTS idx_user_aggregates_uid_date ON user_aggregates(client_uid, date);
 
 -- Metadata table for versioning and settings
 CREATE TABLE IF NOT EXISTS metadata (
@@ -166,6 +200,50 @@ class Database:
             # Update schema version
             cursor.execute("UPDATE metadata SET value = '2' WHERE key = 'schema_version'")
             logger.info("Schema migration v1 -> v2 completed")
+
+        # Migration from version 2 to 3: Add channels cache and user aggregates
+        if from_version < 3:
+            logger.info("Migrating schema v2 -> v3: Adding channels cache and user aggregates")
+
+            # Create channels table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS channels (
+                    channel_id INTEGER PRIMARY KEY,
+                    channel_name TEXT NOT NULL,
+                    parent_channel_id INTEGER,
+                    channel_order INTEGER,
+                    total_clients INTEGER DEFAULT 0,
+                    last_updated INTEGER NOT NULL
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_channels_parent ON channels(parent_channel_id)")
+
+            # Create user_aggregates table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS user_aggregates (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    client_uid TEXT NOT NULL,
+                    date TEXT NOT NULL,
+                    nickname TEXT NOT NULL,
+                    total_samples INTEGER NOT NULL,
+                    online_seconds INTEGER NOT NULL,
+                    avg_idle_ms INTEGER,
+                    most_visited_channel_id INTEGER,
+                    is_away_count INTEGER DEFAULT 0,
+                    is_talking_count INTEGER DEFAULT 0,
+                    input_muted_count INTEGER DEFAULT 0,
+                    output_muted_count INTEGER DEFAULT 0,
+                    is_recording_count INTEGER DEFAULT 0,
+                    UNIQUE(client_uid, date)
+                )
+            """)
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_aggregates_uid ON user_aggregates(client_uid)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_aggregates_date ON user_aggregates(date)")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_user_aggregates_uid_date ON user_aggregates(client_uid, date)")
+
+            # Update schema version
+            cursor.execute("UPDATE metadata SET value = '3' WHERE key = 'schema_version'")
+            logger.info("Schema migration v2 -> v3 completed")
 
         logger.info(f"Schema migration completed: {from_version} -> {to_version}")
 
@@ -325,3 +403,177 @@ class Database:
                 "INSERT OR REPLACE INTO metadata (key, value) VALUES (?, ?)",
                 (key, value)
             )
+
+    def upsert_channels(self, channels: List[Dict[str, any]]) -> int:
+        """
+        Insert or update channel metadata cache.
+
+        Args:
+            channels: List of channel dictionaries from TeamSpeak
+
+        Returns:
+            int: Number of channels updated
+
+        Example:
+            db.upsert_channels([
+                {
+                    'cid': 1,
+                    'channel_name': 'Lobby',
+                    'pid': 0,
+                    'channel_order': 0,
+                    'total_clients': 5
+                }
+            ])
+        """
+        timestamp = int(time.time())
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            channel_data = [
+                (
+                    channel.get('cid'),
+                    channel.get('channel_name', 'Unknown Channel'),
+                    channel.get('pid', 0),
+                    channel.get('channel_order', 0),
+                    channel.get('total_clients', 0),
+                    timestamp
+                )
+                for channel in channels
+            ]
+
+            cursor.executemany(
+                """
+                INSERT OR REPLACE INTO channels
+                (channel_id, channel_name, parent_channel_id, channel_order, total_clients, last_updated)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                channel_data
+            )
+
+            logger.debug(f"Updated {len(channels)} channels in cache")
+            return len(channels)
+
+    def get_channel_name(self, channel_id: int) -> Optional[str]:
+        """
+        Get channel name from cache.
+
+        Args:
+            channel_id: Channel ID
+
+        Returns:
+            str: Channel name or None if not found
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT channel_name FROM channels WHERE channel_id = ?", (channel_id,))
+            row = cursor.fetchone()
+            return row[0] if row else None
+
+    def get_all_channels(self) -> List[Dict[str, any]]:
+        """
+        Get all channels from cache.
+
+        Returns:
+            list: List of channel dictionaries
+        """
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT channel_id, channel_name, parent_channel_id, channel_order, total_clients, last_updated
+                FROM channels
+                ORDER BY channel_order
+            """)
+
+            channels = []
+            for row in cursor.fetchall():
+                channels.append({
+                    'channel_id': row[0],
+                    'channel_name': row[1],
+                    'parent_channel_id': row[2],
+                    'channel_order': row[3],
+                    'total_clients': row[4],
+                    'last_updated': row[5]
+                })
+
+            return channels
+
+    def update_user_aggregates(self, date: Optional[str] = None) -> int:
+        """
+        Update user aggregates for a specific date.
+        Aggregates data from client_snapshots into daily summaries.
+
+        Args:
+            date: Date in YYYY-MM-DD format (default: today)
+
+        Returns:
+            int: Number of user aggregates updated
+        """
+        from datetime import datetime
+
+        if date is None:
+            date = datetime.now().strftime('%Y-%m-%d')
+
+        # Calculate start and end timestamps for the date
+        start_time = int(datetime.strptime(date, '%Y-%m-%d').timestamp())
+        end_time = start_time + 86400  # +24 hours
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+
+            # Aggregate data from client_snapshots
+            cursor.execute("""
+                INSERT OR REPLACE INTO user_aggregates
+                (client_uid, date, nickname, total_samples, online_seconds, avg_idle_ms,
+                 most_visited_channel_id, is_away_count, is_talking_count, input_muted_count,
+                 output_muted_count, is_recording_count)
+                SELECT
+                    cs.client_uid,
+                    ? as date,
+                    MAX(cs.nickname) as nickname,
+                    COUNT(*) as total_samples,
+                    COUNT(*) * ? as online_seconds,
+                    AVG(cs.idle_ms) as avg_idle_ms,
+                    (
+                        SELECT channel_id
+                        FROM client_snapshots cs2
+                        WHERE cs2.client_uid = cs.client_uid
+                          AND s2.timestamp BETWEEN ? AND ?
+                        GROUP BY channel_id
+                        ORDER BY COUNT(*) DESC
+                        LIMIT 1
+                    ) as most_visited_channel_id,
+                    SUM(cs.is_away) as is_away_count,
+                    SUM(cs.is_talking) as is_talking_count,
+                    SUM(cs.input_muted) as input_muted_count,
+                    SUM(cs.output_muted) as output_muted_count,
+                    SUM(cs.is_recording) as is_recording_count
+                FROM client_snapshots cs
+                JOIN snapshots s ON cs.snapshot_id = s.id
+                LEFT JOIN snapshots s2 ON s2.id = cs.snapshot_id
+                WHERE s.timestamp BETWEEN ? AND ?
+                GROUP BY cs.client_uid
+            """, (date, self._get_poll_interval(), start_time, end_time, start_time, end_time))
+
+            count = cursor.rowcount
+            logger.info(f"Updated {count} user aggregates for {date}")
+            return count
+
+    def _get_poll_interval(self) -> int:
+        """
+        Get polling interval from metadata or use default.
+
+        Returns:
+            int: Polling interval in seconds
+        """
+        interval_str = self._get_metadata('poll_interval')
+        return int(interval_str) if interval_str else 60  # Default 60 seconds
+
+    def set_poll_interval(self, interval: int) -> None:
+        """
+        Set polling interval in metadata.
+
+        Args:
+            interval: Polling interval in seconds
+        """
+        self.set_metadata('poll_interval', str(interval))

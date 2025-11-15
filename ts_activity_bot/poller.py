@@ -130,6 +130,40 @@ def cleanup_old_data(db, retention_days: int, logger) -> None:
         logger.error(f"Data cleanup failed: {e}", exc_info=True)
 
 
+def update_channel_cache(client, db, logger) -> None:
+    """
+    Update channel name cache from TeamSpeak server.
+
+    Args:
+        client: TeamSpeak query client
+        db: Database instance
+        logger: Logger instance
+    """
+    try:
+        channels = client.fetch_channellist()
+        count = db.upsert_channels(channels)
+        logger.info(f"Updated channel cache: {count} channels")
+    except Exception as e:
+        logger.error(f"Channel cache update failed: {e}", exc_info=True)
+
+
+def update_aggregates(db, logger) -> None:
+    """
+    Update user aggregates for yesterday's data.
+
+    Args:
+        db: Database instance
+        logger: Logger instance
+    """
+    try:
+        from datetime import datetime, timedelta
+        yesterday = (datetime.now() - timedelta(days=1)).strftime('%Y-%m-%d')
+        count = db.update_user_aggregates(yesterday)
+        logger.info(f"Updated user aggregates for {yesterday}: {count} users")
+    except Exception as e:
+        logger.error(f"User aggregates update failed: {e}", exc_info=True)
+
+
 def main():
     """Main polling loop."""
     global shutdown_requested
@@ -182,9 +216,20 @@ def main():
         logger.error(f"Failed to create TeamSpeak client: {e}", exc_info=True)
         sys.exit(1)
 
-    # Track last cleanup time
+    # Track last maintenance times
     last_cleanup = datetime.now()
+    last_channel_update = datetime.now()
+    last_aggregate_update = datetime.now()
     cleanup_interval = timedelta(hours=24)  # Run cleanup daily
+    channel_update_interval = timedelta(hours=1)  # Update channels hourly
+    aggregate_update_interval = timedelta(hours=6)  # Update aggregates every 6 hours
+
+    # Store poll interval in metadata for aggregation calculations
+    db.set_poll_interval(config.polling.interval_seconds)
+
+    # Initial channel cache update
+    logger.info("Performing initial channel cache update...")
+    update_channel_cache(client, db, logger)
 
     logger.info("Starting polling loop...")
     consecutive_failures = 0
@@ -223,12 +268,24 @@ def main():
                     time.sleep(backoff_delay)
                     continue
 
-            # Run periodic cleanup if retention policy is set
+            # Run periodic maintenance tasks
+            now = datetime.now()
+
+            # Data cleanup (if retention policy is set)
             if config.database.retention_days:
-                now = datetime.now()
                 if now - last_cleanup >= cleanup_interval:
                     cleanup_old_data(db, config.database.retention_days, logger)
                     last_cleanup = now
+
+            # Channel cache update
+            if now - last_channel_update >= channel_update_interval:
+                update_channel_cache(client, db, logger)
+                last_channel_update = now
+
+            # User aggregates update
+            if now - last_aggregate_update >= aggregate_update_interval:
+                update_aggregates(db, logger)
+                last_aggregate_update = now
 
             # Sleep until next poll
             poll_duration = time.time() - poll_start
