@@ -39,7 +39,7 @@ A production-ready Python bot for tracking and analyzing user activity on TeamSp
 
 1. **Clone and configure**:
    ```bash
-   git clone <your-repo-url>
+   git clone https://github.com/Metroseksuaali/teamspeak6-activity
    cd teamspeak6-activity
    cp config.example.yaml config.yaml
    ```
