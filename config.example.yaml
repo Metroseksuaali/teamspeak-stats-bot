@@ -81,8 +81,8 @@ database:
   backend: "sqlite"
 
   # SQLite database file path
-  # This path is still required even when backend=postgresql because
-  # analytics/stats endpoints currently read from SQLite.
+  # Stats/analytics endpoints (REST, GraphQL, CLI) only work with SQLite.
+  # When backend=postgresql, this path is ignored and stats endpoints are disabled.
   # Relative paths are relative to the working directory.
   # For Docker: use /app/data/ts_activity.sqlite to persist in volume.
   path: "./data/ts_activity.sqlite"
