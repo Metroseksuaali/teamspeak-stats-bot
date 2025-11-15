@@ -1,6 +1,8 @@
-# TeamSpeak 6 Activity Stats Bot
+# TeamSpeak Activity Stats Bot
 
-A production-ready Python bot for tracking and analyzing user activity on TeamSpeak 6 servers. Collect time-series data, generate insights, and monitor server usage patterns.
+A production-ready Python bot for tracking and analyzing user activity on **TeamSpeak 3** (3.13+) and **TeamSpeak 6** servers. Collect time-series data, generate insights, and monitor server usage patterns via WebQuery HTTP API.
+
+> **✅ Works with both TeamSpeak 3 (3.13.0+) and TeamSpeak 6!**
 
 ## Features
 
@@ -112,24 +114,55 @@ A production-ready Python bot for tracking and analyzing user activity on TeamSp
 
 ## Configuration
 
-### TeamSpeak 6 WebQuery Setup
+### TeamSpeak WebQuery Setup
 
-1. **Enable WebQuery** on your TS6 server (usually enabled by default)
-   - HTTP: Port 10080
-   - HTTPS: Port 10443
+This bot works with both **TeamSpeak 3 (3.13.0+)** and **TeamSpeak 6** via the WebQuery HTTP API.
 
-2. **Generate API Key**:
-   ```bash
-   # Option A: Via SSH ServerQuery
-   ssh serveradmin@your-server -p 10022
-   # Then run:
-   apikeyadd scope=manage
+#### 1. **Verify WebQuery is Enabled**
 
-   # Option B: Via TS6 Server Web UI
-   # Navigate to Server Settings → API Keys → Create New Key
-   ```
+WebQuery is usually enabled by default on both TS3 and TS6:
+- **HTTP**: Port `10080`
+- **HTTPS**: Port `10443`
 
-3. **Copy API key** to `config.yaml`
+#### 2. **Generate API Key**
+
+**For TeamSpeak 3 (3.13.0+):**
+```bash
+# Option A: Via SSH ServerQuery (port 10022)
+ssh serveradmin@your-server.com -p 10022
+# After connecting, run:
+use sid=1
+apikeyadd scope=manage
+# Copy the generated API key (long alphanumeric string)
+
+# Option B: Via Raw ServerQuery (telnet, port 10011)
+telnet your-server.com 10011
+login serveradmin YOUR_PASSWORD
+use sid=1
+apikeyadd scope=manage
+quit
+```
+
+**For TeamSpeak 6:**
+```bash
+# Via SSH ServerQuery
+ssh serveradmin@your-server.com -p 10022
+use sid=1
+apikeyadd scope=manage
+
+# Or use TS6 Web Admin Panel (if available)
+```
+
+**Important:** The API key is a long string like `BAB4hHBG-Rsfa...`, **NOT** a simple password!
+
+#### 3. **Update `config.yaml`**
+
+```yaml
+teamspeak:
+  base_url: "http://your-server.com:10080"  # Use your server address
+  api_key: "PASTE_YOUR_LONG_API_KEY_HERE"   # From step 2
+  virtual_server_id: 1                       # Usually 1
+```
 
 ### Configuration Options
 
@@ -472,10 +505,13 @@ teamspeak6-activity/
 ## FAQ
 
 **Q: Does this work with TeamSpeak 3?**
-A: Partially. TS3 has WebQuery (3.12.0+) with similar API, but field names may differ. Minor code changes needed.
+A: **Yes!** Fully tested and working with TeamSpeak 3.13.0+. The WebQuery API is identical between TS3 (3.13+) and TS6. Just make sure you have WebQuery enabled (default on port 10080/10443) and create an API key via ServerQuery.
+
+**Q: What's the difference between TS3 and TS6 for this bot?**
+A: None! Both versions use the same WebQuery HTTP API. The bot works identically on both. The only difference is the server version number displayed in responses.
 
 **Q: Can I use SSH ServerQuery instead of WebQuery?**
-A: Not currently. This version focuses on WebQuery (HTTP/HTTPS). SSH support could be added.
+A: Not directly. This bot uses the WebQuery **HTTP API** (port 10080/10443). However, you use SSH ServerQuery (port 10022) or Raw ServerQuery (port 10011) to **create the API key** that the bot then uses for HTTP requests.
 
 **Q: How much data will be stored?**
 A: Depends on poll interval and user count. Example: 10 users, 30s polls = ~1MB/day. Use `retention_days` to auto-delete old data.
