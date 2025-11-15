@@ -36,8 +36,8 @@ class TeamSpeakQueryClient:
         self.verify_ssl = config.verify_ssl
         self.include_query_clients = config.include_query_clients
 
-        # Debug: Log API key info (NOT the actual key for security)
-        logger.info(f"API Key length: {len(self.api_key)} chars, starts with: {self.api_key[:5]}...")
+        # Debug: Verify API key is configured (does not expose credential details)
+        logger.debug(f"API key configured: {bool(self.api_key)}")
 
         # Create HTTP client with connection pooling
         self.client = httpx.Client(
