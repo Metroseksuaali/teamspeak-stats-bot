@@ -40,7 +40,7 @@ def format_duration(hours: float) -> str:
 @click.option('--config', default='config.yaml', help='Path to config file')
 @click.pass_context
 def cli(ctx, config):
-    """TeamSpeak 6 Activity Stats Bot - CLI Interface"""
+    """TeamSpeak Activity Stats Bot - CLI Interface (TS3 3.13+ & TS6)"""
     try:
         cfg = get_config(config)
         stats = StatsCalculator(cfg.database.path, cfg.polling.interval_seconds)
@@ -344,8 +344,9 @@ def growth(ctx, days):
 
 
 @cli.command()
+@click.option('--detailed', is_flag=True, help='Show detailed status (away, mute, etc.)')
 @click.pass_context
-def online_now(ctx):
+def online_now(ctx, detailed):
     """Show currently online users."""
     stats = ctx.obj['stats']
 
@@ -361,17 +362,40 @@ def online_now(ctx):
         table = Table(show_header=True, header_style="bold cyan")
         table.add_column("Nickname")
         table.add_column("Channel", justify="right")
-        table.add_column("Idle Time", justify="right")
+        table.add_column("Idle", justify="right")
+
+        if detailed:
+            table.add_column("Status")
+            table.add_column("Connected", justify="right")
 
         for user in users:
-            table.add_row(
+            status_flags = []
+            if user['is_away']:
+                status_flags.append("💤")
+            if user['input_muted']:
+                status_flags.append("🔇")
+            if user['is_recording']:
+                status_flags.append("🔴")
+            if user['is_talking']:
+                status_flags.append("🗣️")
+
+            row = [
                 user['nickname'],
                 str(user['channel_id']),
-                f"{user['idle_minutes']:.1f} min"
-            )
+                f"{user['idle_minutes']:.1f}m"
+            ]
+
+            if detailed:
+                row.append(" ".join(status_flags) if status_flags else "-")
+                row.append(f"{user['connected_hours']:.1f}h" if user['connected_time'] else "-")
+
+            table.add_row(*row)
 
         console.print(table)
         console.print(f"\n[dim]Snapshot time: {format_timestamp(users[0]['snapshot_time'])}[/dim]")
+
+        if detailed:
+            console.print("\n[dim]Legend: 💤=Away 🔇=Muted 🔴=Recording 🗣️=Talking[/dim]")
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")
@@ -425,6 +449,202 @@ def db_stats(ctx):
             console.print(f"Last Snapshot: {format_timestamp(stats['last_snapshot_timestamp'])}")
 
         console.print(f"Schema Version: {stats['schema_version']}")
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+
+@cli.command()
+@click.option('--days', default=7, help='Number of days to analyze')
+@click.option('--limit', default=10, help='Number of users to show')
+@click.pass_context
+def away_stats(ctx, days, limit):
+    """Show AFK/Away status statistics."""
+    stats = ctx.obj['stats']
+
+    console.print(f"\n[bold]Away/AFK Statistics - Last {days} Days[/bold]\n")
+
+    try:
+        away = stats.get_away_stats(days=days, limit=limit)
+
+        console.print(f"Total Samples: {away['total_samples']}")
+        console.print(f"Away Samples: {away['away_samples']} ({away['away_percentage']:.1f}%)\n")
+
+        if away['top_away_users']:
+            console.print("[bold]Top Away Users:[/bold]")
+            table = Table(show_header=True, header_style="bold cyan")
+            table.add_column("#", style="dim", width=3)
+            table.add_column("Nickname")
+            table.add_column("Away %", justify="right")
+            table.add_column("Last Away Message")
+
+            for i, user in enumerate(away['top_away_users'], 1):
+                table.add_row(
+                    str(i),
+                    user['nickname'],
+                    f"{user['away_percentage']:.1f}%",
+                    user['last_away_message'][:40] if user['last_away_message'] else "-"
+                )
+
+            console.print(table)
+        else:
+            console.print("[yellow]No away users found[/yellow]")
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+
+@cli.command()
+@click.option('--days', default=7, help='Number of days to analyze')
+@click.pass_context
+def mute_stats(ctx, days):
+    """Show microphone/speaker mute and recording statistics."""
+    stats = ctx.obj['stats']
+
+    console.print(f"\n[bold]Mute/Recording Statistics - Last {days} Days[/bold]\n")
+
+    try:
+        mute = stats.get_mute_stats(days=days)
+
+        console.print(f"Total Samples: {mute['total_samples']}")
+        console.print(f"Mic Muted: {mute['mic_muted_percentage']:.1f}%")
+        console.print(f"Speaker Muted: {mute['speaker_muted_percentage']:.1f}%")
+        console.print(f"Recording: {mute['recording_percentage']:.1f}%")
+        console.print(f"Talking: {mute['talking_percentage']:.1f}%\n")
+
+        if mute['top_recorders']:
+            console.print("[bold]Top Recorders:[/bold]")
+            table = Table(show_header=True, header_style="bold cyan")
+            table.add_column("#", style="dim", width=3)
+            table.add_column("Nickname")
+            table.add_column("Recording %", justify="right")
+
+            for i, user in enumerate(mute['top_recorders'], 1):
+                table.add_row(
+                    str(i),
+                    user['nickname'],
+                    f"{user['recording_percentage']:.1f}%"
+                )
+
+            console.print(table)
+        else:
+            console.print("[yellow]No recording activity detected[/yellow]")
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+
+@cli.command()
+@click.option('--days', default=7, help='Number of days to analyze')
+@click.pass_context
+def server_groups(ctx, days):
+    """Show server group membership statistics."""
+    stats = ctx.obj['stats']
+
+    console.print(f"\n[bold]Server Group Statistics - Last {days} Days[/bold]\n")
+
+    try:
+        groups = stats.get_server_group_stats(days=days)
+
+        if not groups:
+            console.print("[yellow]No server group data available[/yellow]")
+            return
+
+        table = Table(show_header=True, header_style="bold cyan")
+        table.add_column("Group ID", justify="right")
+        table.add_column("Unique Members", justify="right")
+        table.add_column("Total Samples", justify="right")
+
+        for group in groups[:20]:  # Top 20 groups
+            table.add_row(
+                group['group_id'],
+                str(group['unique_members']),
+                str(group['total_samples'])
+            )
+
+        console.print(table)
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+
+@cli.command()
+@click.option('--days', default=7, help='Number of days to analyze')
+@click.option('--limit', default=10, help='Number of users to show')
+@click.pass_context
+def channel_hoppers(ctx, days, limit):
+    """Show users who switch channels most frequently."""
+    stats = ctx.obj['stats']
+
+    console.print(f"\n[bold]Top {limit} Channel Hoppers - Last {days} Days[/bold]\n")
+
+    try:
+        hoppers = stats.get_channel_switches(days=days, limit=limit)
+
+        if not hoppers:
+            console.print("[yellow]No channel switching data available[/yellow]")
+            return
+
+        table = Table(show_header=True, header_style="bold cyan")
+        table.add_column("#", style="dim", width=3)
+        table.add_column("Nickname")
+        table.add_column("Switches", justify="right")
+        table.add_column("Per Hour", justify="right")
+
+        for i, user in enumerate(hoppers, 1):
+            table.add_row(
+                str(i),
+                user['nickname'],
+                str(user['channel_switches']),
+                f"{user['switches_per_hour']:.2f}"
+            )
+
+        console.print(table)
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+
+@cli.command()
+@click.option('--days', default=7, help='Number of days to analyze')
+@click.option('--limit', default=10, help='Number of users to show')
+@click.pass_context
+def connection_patterns(ctx, days, limit):
+    """Show connection/disconnection patterns and session statistics."""
+    stats = ctx.obj['stats']
+
+    console.print(f"\n[bold]Connection Patterns - Last {days} Days[/bold]\n")
+
+    try:
+        patterns = stats.get_connection_patterns(days=days, limit=limit)
+
+        console.print(f"Total Users: {patterns['total_users']}")
+        console.print(f"Average Online Time: {patterns['avg_online_time_hours']:.1f} hours\n")
+
+        if patterns['top_reconnectors']:
+            console.print("[bold]Most Frequent Reconnectors:[/bold]")
+            table = Table(show_header=True, header_style="bold cyan")
+            table.add_column("#", style="dim", width=3)
+            table.add_column("Nickname")
+            table.add_column("Sessions", justify="right")
+            table.add_column("Avg Session", justify="right")
+
+            for i, user in enumerate(patterns['top_reconnectors'], 1):
+                table.add_row(
+                    str(i),
+                    user['nickname'],
+                    str(user['session_count']),
+                    f"{user['avg_session_length_minutes']:.1f} min"
+                )
+
+            console.print(table)
+        else:
+            console.print("[yellow]No reconnection data available[/yellow]")
 
     except Exception as e:
         console.print(f"[red]Error: {e}[/red]")

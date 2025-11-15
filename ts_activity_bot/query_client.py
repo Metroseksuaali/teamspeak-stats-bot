@@ -115,7 +115,7 @@ class TeamSpeakQueryClient:
 
     def fetch_clientlist(self) -> List[Dict[str, any]]:
         """
-        Fetch list of currently connected clients.
+        Fetch list of currently connected clients with extended information.
 
         Returns:
             list: List of client dictionaries with fields:
@@ -126,6 +126,14 @@ class TeamSpeakQueryClient:
                 - client_unique_identifier (str): Unique identifier
                 - client_idle_time (int): Idle time in milliseconds
                 - client_type (int): 0 = normal user, 1 = query client
+                - client_away (int): 0 = not away, 1 = away
+                - client_away_message (str): Away message if set
+                - client_is_talker (int): Has talk power
+                - client_input_muted (int): Microphone muted
+                - client_output_muted (int): Speakers muted
+                - client_is_recording (int): Currently recording
+                - client_servergroups (str): Comma-separated server group IDs
+                - connection_connected_time (int): Seconds connected
 
         Example response:
             [
@@ -136,14 +144,27 @@ class TeamSpeakQueryClient:
                     "client_nickname": "User123",
                     "client_unique_identifier": "abc123def456==",
                     "client_idle_time": 5000,
-                    "client_type": 0
+                    "client_type": 0,
+                    "client_away": 0,
+                    "client_input_muted": 0,
+                    "client_servergroups": "6,7"
                 }
             ]
         """
         try:
-            # Request with additional info flags
-            # -uid = unique identifier, -times = connection times, -voice = voice status
-            clients = self._make_request('clientlist', params={'-uid': '', '-times': ''})
+            # Request with extended info flags
+            # -uid = unique identifier
+            # -times = connection times (client_idle_time, connection_connected_time)
+            # -away = away status (client_away, client_away_message)
+            # -voice = voice/mute status (client_is_talker, client_input_muted, etc.)
+            # -groups = server groups (client_servergroups)
+            clients = self._make_request('clientlist', params={
+                '-uid': '',
+                '-times': '',
+                '-away': '',
+                '-voice': '',
+                '-groups': ''
+            })
 
             # Filter out query clients if configured
             if not self.include_query_clients:
