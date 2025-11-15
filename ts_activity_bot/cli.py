@@ -2,6 +2,9 @@
 Command-line interface for TS6 Activity Bot.
 
 Provides commands to query and display statistics.
+
+Copyright (C) 2025 Metroseksuaali
+Licensed under GNU AGPL v3.0 - see LICENSE file for details.
 """
 
 import sys

@@ -2,6 +2,9 @@
 Polling service for TS6 Activity Bot.
 
 Periodically queries TeamSpeak server and stores activity data.
+
+Copyright (C) 2025 Metroseksuaali
+Licensed under GNU AGPL v3.0 - see LICENSE file for details.
 """
 
 import logging

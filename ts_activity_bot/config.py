@@ -2,6 +2,9 @@
 Configuration management for TS6 Activity Bot.
 
 Loads and validates configuration from YAML file using Pydantic.
+
+Copyright (C) 2025 Metroseksuaali
+Licensed under GNU AGPL v3.0 - see LICENSE file for details.
 """
 
 import os
