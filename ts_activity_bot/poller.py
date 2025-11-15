@@ -16,7 +16,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from ts_activity_bot.config import get_config
-from ts_activity_bot.db import Database
+from ts_activity_bot.db import create_database
 from ts_activity_bot.query_client import create_client
 
 # Global flag for graceful shutdown
@@ -193,9 +193,9 @@ def main():
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 
-    # Initialize database
+    # Initialize database (SQLite or PostgreSQL based on config)
     try:
-        db = Database(config.database.path)
+        db = create_database(config)
         logger.info("Database initialized successfully")
     except Exception as e:
         logger.error(f"Failed to initialize database: {e}", exc_info=True)

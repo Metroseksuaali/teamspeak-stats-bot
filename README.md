@@ -206,17 +206,24 @@ database:
   path: ./data/ts_activity.sqlite
 ```
 
-**PostgreSQL** - For large-scale deployments with high concurrency:
+**PostgreSQL** - For large-scale data collection with high write throughput:
 ```yaml
 database:
   backend: postgresql
   connection_string: postgresql://user:password@localhost:5432/teamspeak_stats
+  path: ./data/ts_activity.sqlite  # Still needed for analytics queries
 ```
 
-PostgreSQL requirements:
+PostgreSQL configuration:
 - Install psycopg2: `pip install psycopg2-binary`
-- Supports connection pooling for better performance
-- Recommended for >100k snapshots or high API request rates
+- Supports connection pooling for better write performance
+- Recommended for >100k snapshots or >10 snapshots/second
+
+**Current limitation**: Analytics/stats queries currently require SQLite. When using PostgreSQL:
+- ✅ Data collection (poller) writes to PostgreSQL
+- ✅ Basic endpoints (`/health`, `/database`) use PostgreSQL
+- ⚠️ Stats/analytics endpoints (`/stats/*`, GraphQL) read from SQLite
+- For full PostgreSQL support, keep both databases or sync PostgreSQL → SQLite periodically
 
 ---
 

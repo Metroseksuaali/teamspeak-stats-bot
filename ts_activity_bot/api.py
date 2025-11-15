@@ -18,7 +18,7 @@ from fastapi.security import APIKeyHeader, APIKeyQuery
 from pydantic import BaseModel
 
 from ts_activity_bot.config import get_config
-from ts_activity_bot.db import Database
+from ts_activity_bot.db import create_database
 from ts_activity_bot.stats import StatsCalculator
 from ts_activity_bot.graphql_schema import create_graphql_router
 from ts_activity_bot.metrics import create_metrics_collector
@@ -37,9 +37,14 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Initialize database backend (SQLite or PostgreSQL based on config)
+db = create_database(config)
+
 # Initialize stats calculator
+# NOTE: StatsCalculator currently requires SQLite backend for complex analytics queries.
+# For PostgreSQL deployments, use SQLite path for read operations (stats/analytics)
+# and PostgreSQL for write operations (data collection via poller).
 stats_calc = StatsCalculator(config.database.path, config.polling.interval_seconds)
-db = Database(config.database.path)
 
 # Initialize Prometheus metrics collector
 metrics_collector = create_metrics_collector(config)
