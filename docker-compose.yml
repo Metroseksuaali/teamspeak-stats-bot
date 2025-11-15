@@ -1,0 +1,137 @@
+version: '3.8'
+
+services:
+  # ===========================================================================
+  # Poller Service - Continuously polls TeamSpeak server
+  # ===========================================================================
+  poller:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ts6-activity-poller
+    restart: unless-stopped
+
+    # Mount configuration and data volumes
+    volumes:
+      # Config file (read-only)
+      - ./config.yaml:/app/config.yaml:ro
+      # Database (persistent)
+      - ./data:/app/data
+      # Logs (persistent)
+      - ./logs:/app/logs
+
+    # Override default command to run poller
+    command: python -m ts_activity_bot.poller
+
+    # Environment variables (optional, config.yaml takes precedence)
+    environment:
+      - TZ=UTC  # Set timezone for logs
+
+    # Health check
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sqlite3; conn=sqlite3.connect('/app/data/ts_activity.sqlite'); conn.close()"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ===========================================================================
+  # API Service - FastAPI web server for statistics
+  # ===========================================================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ts6-activity-api
+    restart: unless-stopped
+
+    # Expose API port to host
+    ports:
+      - "8080:8080"
+
+    # Mount configuration and data volumes
+    volumes:
+      # Config file (read-only)
+      - ./config.yaml:/app/config.yaml:ro
+      # Database (read-only for API - only poller writes)
+      - ./data:/app/data:ro
+      # Logs (persistent)
+      - ./logs:/app/logs
+
+    # Override default command to run API server
+    command: python -m ts_activity_bot.api
+
+    # Environment variables
+    environment:
+      - TZ=UTC  # Set timezone for logs
+
+    # Wait for poller to create database
+    depends_on:
+      poller:
+        condition: service_healthy
+
+    # Health check (verify API is responding)
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ===========================================================================
+# Named volumes (optional, uncomment to use Docker volumes instead of bind mounts)
+# ===========================================================================
+# volumes:
+#   ts6_data:
+#   ts6_logs:
+
+# ===========================================================================
+# Usage Examples
+# ===========================================================================
+#
+# Start services:
+#   docker-compose up -d
+#
+# View logs:
+#   docker-compose logs -f
+#   docker-compose logs -f poller
+#   docker-compose logs -f api
+#
+# Stop services:
+#   docker-compose down
+#
+# Restart services:
+#   docker-compose restart
+#
+# Execute CLI commands:
+#   docker-compose exec poller python -m ts_activity_bot.cli top-users --days 7
+#   docker-compose exec poller python -m ts_activity_bot.cli db-stats
+#   docker-compose exec poller python -m ts_activity_bot.cli summary --days 30
+#
+# Access API:
+#   curl -H "X-API-Key: YOUR_API_KEY" http://localhost:8080/stats/summary?days=7
+#   curl -H "X-API-Key: YOUR_API_KEY" http://localhost:8080/stats/top-users?days=7&limit=10
+#
+# View API documentation (if enabled):
+#   http://localhost:8080/docs
+#   http://localhost:8080/redoc
+#
+# Rebuild after code changes:
+#   docker-compose build
+#   docker-compose up -d
+#
+# ===========================================================================
