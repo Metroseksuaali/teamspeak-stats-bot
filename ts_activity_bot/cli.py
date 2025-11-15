@@ -651,5 +651,116 @@ def connection_patterns(ctx, days, limit):
         sys.exit(1)
 
 
+@cli.command('lifetime-value')
+@click.option('--days', type=int, default=None, help='Number of days to analyze (default: all time)')
+@click.option('--limit', type=int, default=20, help='Number of users to display')
+@click.pass_context
+def lifetime_value(ctx, days, limit):
+    """Show User Lifetime Value (LTV) rankings.
+
+    LTV score is calculated based on:
+    - Online time (40% weight)
+    - Activity consistency (30% weight)
+    - Engagement/talking time (20% weight)
+    - Channel diversity (10% weight)
+
+    Users are categorized as Power User (80+), Regular (50-79), or Casual (0-49).
+    """
+    try:
+        stats = ctx.obj['stats']
+        users = stats.get_user_lifetime_value(days=days, limit=limit)
+
+        if users:
+            period_text = f"last {days} days" if days else "all time"
+            console.print(f"\n[bold cyan]User Lifetime Value Rankings[/bold cyan] ({period_text})\n")
+
+            table = Table(show_header=True, header_style="bold cyan")
+            table.add_column("#", style="dim", width=3)
+            table.add_column("Nickname", min_width=15)
+            table.add_column("LTV Score", justify="right", style="bold")
+            table.add_column("Category", justify="center")
+            table.add_column("Online", justify="right")
+            table.add_column("Days Active", justify="right")
+            table.add_column("Channels", justify="right")
+            table.add_column("Talking %", justify="right")
+
+            # Color mapping for categories
+            category_colors = {
+                'power_user': 'bold green',
+                'regular': 'yellow',
+                'casual': 'dim'
+            }
+
+            for i, user in enumerate(users, 1):
+                color = category_colors.get(user['category'], '')
+
+                table.add_row(
+                    str(i),
+                    f"[{color}]{user['nickname']}[/{color}]",
+                    f"[{color}]{user['ltv_score']}[/{color}]",
+                    f"[{color}]{user['category_label']}[/{color}]",
+                    format_duration(user['online_hours']),
+                    str(user['days_active']),
+                    str(user['channels_visited']),
+                    f"{user['talking_percentage']}%"
+                )
+
+            console.print(table)
+        else:
+            console.print("[yellow]No data available[/yellow]")
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+
+@cli.command('ltv-summary')
+@click.option('--days', type=int, default=None, help='Number of days to analyze (default: all time)')
+@click.pass_context
+def ltv_summary(ctx, days):
+    """Show User Lifetime Value distribution summary."""
+    try:
+        stats = ctx.obj['stats']
+        summary = stats.get_ltv_summary(days=days)
+
+        if summary['total_users'] > 0:
+            period_text = f"last {days} days" if days else "all time"
+            console.print(f"\n[bold cyan]User Lifetime Value Summary[/bold cyan] ({period_text})\n")
+
+            # Overall stats
+            console.print(f"Total Users: [bold]{summary['total_users']}[/bold]")
+            console.print(f"Average LTV Score: [bold]{summary['avg_ltv_score']}[/bold]\n")
+
+            # Category breakdown table
+            table = Table(show_header=True, header_style="bold cyan")
+            table.add_column("Category", style="bold")
+            table.add_column("Count", justify="right")
+            table.add_column("Percentage", justify="right")
+
+            table.add_row(
+                "[bold green]Power Users (80+)[/bold green]",
+                f"[green]{summary['power_users']}[/green]",
+                f"[green]{summary['power_users_percent']}%[/green]"
+            )
+            table.add_row(
+                "[yellow]Regular Users (50-79)[/yellow]",
+                f"[yellow]{summary['regular_users']}[/yellow]",
+                f"[yellow]{summary['regular_users_percent']}%[/yellow]"
+            )
+            table.add_row(
+                "[dim]Casual Users (0-49)[/dim]",
+                f"[dim]{summary['casual_users']}[/dim]",
+                f"[dim]{summary['casual_users_percent']}%[/dim]"
+            )
+
+            console.print(table)
+        else:
+            console.print("[yellow]No data available[/yellow]")
+
+    except Exception as e:
+        console.print(f"[red]Error: {e}[/red]")
+        sys.exit(1)
+
+
 if __name__ == '__main__':
     cli()

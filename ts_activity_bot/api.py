@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from ts_activity_bot.config import get_config
 from ts_activity_bot.db import Database
 from ts_activity_bot.stats import StatsCalculator
+from ts_activity_bot.graphql_schema import create_graphql_router
 
 # Initialize config and stats
 try:
@@ -47,6 +48,10 @@ app = FastAPI(
     docs_url="/docs" if config.api.docs_enabled else None,
     redoc_url="/redoc" if config.api.docs_enabled else None
 )
+
+# Mount GraphQL router
+graphql_router = create_graphql_router()
+app.include_router(graphql_router, prefix="")
 
 # API Key authentication
 api_key_header = APIKeyHeader(name="X-API-Key", auto_error=False)
@@ -112,6 +117,7 @@ class PeakTime(BaseModel):
 
 class ChannelStat(BaseModel):
     channel_id: int
+    channel_name: str
     total_visits: int
     unique_users: int
     avg_idle_ms: int
@@ -129,6 +135,7 @@ class OnlineUser(BaseModel):
     client_uid: str
     nickname: str
     channel_id: int
+    channel_name: str
     idle_ms: Optional[int]
     idle_minutes: float
     is_away: bool
@@ -220,6 +227,36 @@ class ConnectionPatterns(BaseModel):
     total_users: int
     avg_online_time_hours: float
     top_reconnectors: list[Reconnector]
+
+
+class LTVUser(BaseModel):
+    client_uid: str
+    nickname: str
+    ltv_score: int
+    category: str
+    category_label: str
+    online_hours: float
+    days_active: int
+    activity_frequency_percent: float
+    channels_visited: int
+    talking_percentage: float
+    avg_idle_minutes: float
+    session_count: int
+    avg_session_length_hours: float
+    first_seen: int
+    last_seen: int
+
+
+class LTVSummary(BaseModel):
+    period_days: Optional[int]
+    total_users: int
+    avg_ltv_score: float
+    power_users: int
+    power_users_percent: float
+    regular_users: int
+    regular_users_percent: float
+    casual_users: int
+    casual_users_percent: float
 
 
 # Endpoints
@@ -468,6 +505,46 @@ async def get_connection_patterns(
         return stats_calc.get_connection_patterns(days=days, limit=limit)
     except Exception as e:
         logger.error(f"Error getting connection patterns: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/stats/lifetime-value", response_model=list[LTVUser])
+async def get_lifetime_value(
+    days: Optional[int] = Query(None, description="Number of days to analyze (null = all time)"),
+    limit: int = Query(50, ge=1, le=500, description="Maximum number of users"),
+    api_key: str = Depends(verify_api_key)
+):
+    """
+    Get User Lifetime Value (LTV) rankings.
+
+    LTV score is calculated based on:
+    - Online time (40% weight)
+    - Activity consistency (30% weight)
+    - Engagement/talking time (20% weight)
+    - Channel diversity (10% weight)
+
+    Users are categorized as:
+    - Power User (80-100 score)
+    - Regular User (50-79 score)
+    - Casual User (0-49 score)
+    """
+    try:
+        return stats_calc.get_user_lifetime_value(days=days, limit=limit)
+    except Exception as e:
+        logger.error(f"Error getting LTV: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/stats/lifetime-value/summary", response_model=LTVSummary)
+async def get_ltv_summary(
+    days: Optional[int] = Query(None, description="Number of days to analyze (null = all time)"),
+    api_key: str = Depends(verify_api_key)
+):
+    """Get User Lifetime Value distribution summary."""
+    try:
+        return stats_calc.get_ltv_summary(days=days)
+    except Exception as e:
+        logger.error(f"Error getting LTV summary: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

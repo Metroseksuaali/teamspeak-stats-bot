@@ -146,21 +146,27 @@ class StatsCalculator:
         online_seconds = row['sample_count'] * self.poll_interval
         online_hours = online_seconds / 3600
 
-        # Get favorite channels
+        # Get favorite channels (with names from cache)
         channel_query = """
         SELECT
-            channel_id,
+            cs.channel_id,
+            ch.channel_name,
             COUNT(*) as visits
         FROM client_snapshots cs
         JOIN snapshots s ON cs.snapshot_id = s.id
-        WHERE client_uid = ? AND s.timestamp BETWEEN ? AND ?
-        GROUP BY channel_id
+        LEFT JOIN channels ch ON cs.channel_id = ch.channel_id
+        WHERE cs.client_uid = ? AND s.timestamp BETWEEN ? AND ?
+        GROUP BY cs.channel_id
         ORDER BY visits DESC
         LIMIT 5
         """
         cursor.execute(channel_query, (client_uid, start_time, end_time))
         favorite_channels = [
-            {'channel_id': r['channel_id'], 'visits': r['visits']}
+            {
+                'channel_id': r['channel_id'],
+                'channel_name': r['channel_name'] or f'Channel {r["channel_id"]}',
+                'visits': r['visits']
+            }
             for r in cursor.fetchall()
         ]
 
@@ -373,14 +379,16 @@ class StatsCalculator:
 
         query = """
         SELECT
-            channel_id,
+            cs.channel_id,
+            ch.channel_name,
             COUNT(*) as total_visits,
-            COUNT(DISTINCT client_uid) as unique_users,
-            AVG(idle_ms) as avg_idle_ms
+            COUNT(DISTINCT cs.client_uid) as unique_users,
+            AVG(cs.idle_ms) as avg_idle_ms
         FROM client_snapshots cs
         JOIN snapshots s ON cs.snapshot_id = s.id
+        LEFT JOIN channels ch ON cs.channel_id = ch.channel_id
         WHERE s.timestamp BETWEEN ? AND ?
-        GROUP BY channel_id
+        GROUP BY cs.channel_id
         ORDER BY total_visits DESC
         """
 
@@ -391,6 +399,7 @@ class StatsCalculator:
         results = [
             {
                 'channel_id': row['channel_id'],
+                'channel_name': row['channel_name'] or f'Channel {row["channel_id"]}',
                 'total_visits': row['total_visits'],
                 'unique_users': row['unique_users'],
                 'avg_idle_ms': int(row['avg_idle_ms']) if row['avg_idle_ms'] else 0
@@ -464,6 +473,7 @@ class StatsCalculator:
             cs.client_uid,
             cs.nickname,
             cs.channel_id,
+            ch.channel_name,
             cs.idle_ms,
             cs.is_away,
             cs.away_message,
@@ -476,6 +486,7 @@ class StatsCalculator:
             s.timestamp
         FROM client_snapshots cs
         JOIN snapshots s ON cs.snapshot_id = s.id
+        LEFT JOIN channels ch ON cs.channel_id = ch.channel_id
         WHERE s.id = (SELECT MAX(id) FROM snapshots)
         ORDER BY cs.nickname
         """
@@ -489,6 +500,7 @@ class StatsCalculator:
                 'client_uid': row['client_uid'],
                 'nickname': row['nickname'],
                 'channel_id': row['channel_id'],
+                'channel_name': row['channel_name'] or f'Channel {row["channel_id"]}',
                 'idle_ms': row['idle_ms'],
                 'idle_minutes': round(row['idle_ms'] / 60000, 2) if row['idle_ms'] else 0,
                 'is_away': bool(row['is_away']),
@@ -922,4 +934,180 @@ class StatsCalculator:
             'total_users': row['total_users'],
             'avg_online_time_hours': avg_online_time_hours,
             'top_reconnectors': top_reconnectors
+        }
+
+    def get_user_lifetime_value(self, days: Optional[int] = None, limit: int = 50) -> List[Dict]:
+        """
+        Calculate User Lifetime Value (LTV) score for users.
+
+        LTV is calculated based on:
+        - Total online time (weighted heavily)
+        - Activity consistency (days active)
+        - Engagement (talking time, channel visits)
+        - Social interaction (different channels visited)
+
+        Args:
+            days: Number of days to analyze (None = all time)
+            limit: Number of users to return
+
+        Returns:
+            list: Users sorted by LTV score with categorization
+        """
+        start_time, end_time = self._get_time_range(days)
+
+        conn = self._get_connection()
+        cursor = conn.cursor()
+
+        query = """
+        WITH session_gaps AS (
+            -- First calculate LAG without aggregation
+            SELECT
+                cs.client_uid,
+                s.timestamp,
+                LAG(s.timestamp) OVER (PARTITION BY cs.client_uid ORDER BY s.timestamp) as prev_timestamp
+            FROM client_snapshots cs
+            JOIN snapshots s ON cs.snapshot_id = s.id
+            WHERE s.timestamp BETWEEN ? AND ?
+        ),
+        user_metrics AS (
+            -- Then aggregate the results
+            SELECT
+                cs.client_uid,
+                MAX(cs.nickname) as nickname,
+                COUNT(*) as total_samples,
+                COUNT(DISTINCT DATE(s.timestamp, 'unixepoch')) as days_active,
+                COUNT(DISTINCT cs.channel_id) as channels_visited,
+                SUM(CASE WHEN cs.is_talking = 1 THEN 1 ELSE 0 END) as talking_samples,
+                AVG(cs.idle_ms) as avg_idle_ms,
+                MIN(s.timestamp) as first_seen,
+                MAX(s.timestamp) as last_seen,
+                -- Calculate session count from session_gaps
+                (
+                    SELECT COUNT(*)
+                    FROM session_gaps sg
+                    WHERE sg.client_uid = cs.client_uid
+                      AND (sg.prev_timestamp IS NULL
+                           OR sg.timestamp - sg.prev_timestamp > (? * 2))
+                ) as session_count
+            FROM client_snapshots cs
+            JOIN snapshots s ON cs.snapshot_id = s.id
+            WHERE s.timestamp BETWEEN ? AND ?
+            GROUP BY cs.client_uid
+        )
+        SELECT
+            client_uid,
+            nickname,
+            total_samples,
+            days_active,
+            channels_visited,
+            talking_samples,
+            avg_idle_ms,
+            first_seen,
+            last_seen,
+            session_count,
+            -- LTV Score calculation (0-100 scale)
+            CAST(
+                -- Online time score (40% weight) - normalized to 40 points max
+                (CAST(total_samples AS FLOAT) / (SELECT MAX(total_samples) FROM user_metrics) * 40) +
+                -- Consistency score (30% weight) - days_active normalized to 30 points
+                (CAST(days_active AS FLOAT) / (SELECT MAX(days_active) FROM user_metrics) * 30) +
+                -- Engagement score (20% weight) - talking activity normalized to 20 points
+                (CAST(talking_samples AS FLOAT) / NULLIF((SELECT MAX(talking_samples) FROM user_metrics), 0) * 20) +
+                -- Social score (10% weight) - channel diversity normalized to 10 points
+                (CAST(channels_visited AS FLOAT) / (SELECT MAX(channels_visited) FROM user_metrics) * 10)
+            AS INTEGER) as ltv_score
+        FROM user_metrics
+        WHERE total_samples > 5  -- Filter out users with very few samples
+        ORDER BY ltv_score DESC
+        LIMIT ?
+        """
+
+        cursor.execute(query, (start_time, end_time, self.poll_interval, start_time, end_time, limit))
+
+        results = []
+        for row in cursor.fetchall():
+            # Calculate derived metrics
+            online_seconds = row['total_samples'] * self.poll_interval
+            online_hours = online_seconds / 3600
+            talking_percentage = round((row['talking_samples'] / row['total_samples'] * 100) if row['total_samples'] > 0 else 0, 2)
+
+            # Categorize user based on LTV score
+            ltv_score = row['ltv_score']
+            if ltv_score >= 80:
+                category = 'power_user'
+                category_label = 'Power User'
+            elif ltv_score >= 50:
+                category = 'regular'
+                category_label = 'Regular User'
+            else:
+                category = 'casual'
+                category_label = 'Casual User'
+
+            # Calculate activity frequency
+            time_span_days = (row['last_seen'] - row['first_seen']) / 86400
+            activity_frequency = round((row['days_active'] / time_span_days * 100) if time_span_days > 0 else 0, 2)
+
+            results.append({
+                'client_uid': row['client_uid'],
+                'nickname': row['nickname'],
+                'ltv_score': ltv_score,
+                'category': category,
+                'category_label': category_label,
+                'total_samples': row['total_samples'],
+                'online_hours': round(online_hours, 2),
+                'days_active': row['days_active'],
+                'activity_frequency_percent': activity_frequency,
+                'channels_visited': row['channels_visited'],
+                'talking_samples': row['talking_samples'],
+                'talking_percentage': talking_percentage,
+                'avg_idle_minutes': round(row['avg_idle_ms'] / 60000, 2) if row['avg_idle_ms'] else 0,
+                'session_count': row['session_count'],
+                'avg_session_length_hours': round((online_hours / row['session_count']) if row['session_count'] > 0 else 0, 2),
+                'first_seen': row['first_seen'],
+                'last_seen': row['last_seen']
+            })
+
+        conn.close()
+        return results
+
+    def get_ltv_summary(self, days: Optional[int] = None) -> Dict:
+        """
+        Get summary statistics for User Lifetime Value distribution.
+
+        Args:
+            days: Number of days to analyze (None = all time)
+
+        Returns:
+            dict: LTV distribution and summary statistics
+        """
+        ltv_data = self.get_user_lifetime_value(days=days, limit=10000)  # Get all users
+
+        if not ltv_data:
+            return {
+                'total_users': 0,
+                'avg_ltv_score': 0,
+                'power_users': 0,
+                'regular_users': 0,
+                'casual_users': 0,
+                'distribution': {}
+            }
+
+        # Count users by category
+        power_users = sum(1 for u in ltv_data if u['category'] == 'power_user')
+        regular_users = sum(1 for u in ltv_data if u['category'] == 'regular')
+        casual_users = sum(1 for u in ltv_data if u['category'] == 'casual')
+
+        # Calculate average LTV score
+        avg_ltv = sum(u['ltv_score'] for u in ltv_data) / len(ltv_data)
+
+        return {
+            'period_days': days,
+            'total_users': len(ltv_data),
+            'avg_ltv_score': round(avg_ltv, 2),
+            'power_users': power_users,
+            'power_users_percent': round((power_users / len(ltv_data) * 100), 2),
+            'regular_users': regular_users,
+            'regular_users_percent': round((regular_users / len(ltv_data) * 100), 2),
+            'casual_users': casual_users,
+            'casual_users_percent': round((casual_users / len(ltv_data) * 100), 2)
         }
