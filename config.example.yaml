@@ -1,0 +1,170 @@
+# TeamSpeak 6 Activity Stats Bot Configuration
+# ==============================================================================
+# Copy this file to config.yaml and fill in your server details
+# ==============================================================================
+
+teamspeak:
+  # WebQuery base URL
+  # - For HTTP: http://your-server.com:10080
+  # - For HTTPS: https://your-server.com:10443 (recommended)
+  # - For localhost: http://localhost:10080 or https://localhost:10443
+  base_url: "https://your-ts-server.com:10443"
+
+  # WebQuery API key
+  # Generate this in your TeamSpeak 6 server settings or query interface
+  # Example: To create an API key via SSH query:
+  #   1. Connect to SSH query: ssh serveradmin@your-server -p 10022
+  #   2. Run: apikeyadd scope=manage
+  #   3. Copy the generated key here
+  api_key: "YOUR_API_KEY_HERE"
+
+  # Virtual server ID
+  # For most single-server setups, this is 1
+  # You can find your server ID by connecting to query and running: serverlist
+  virtual_server_id: 1
+
+  # SSL certificate verification
+  # Set to true for production servers with valid certificates
+  # Set to false if using self-signed certificates (not recommended for production)
+  verify_ssl: true
+
+  # Request timeout in seconds
+  # How long to wait for TeamSpeak server responses
+  timeout: 10
+
+  # Include query clients in statistics
+  # Query clients are bots, ServerQuery connections, etc.
+  # Recommended: false (only track real users)
+  include_query_clients: false
+
+polling:
+  # Polling interval in seconds
+  # How often to query the TeamSpeak server for current users
+  # Recommended values:
+  #   - 30s: Good balance, 2880 polls/day
+  #   - 60s: Lower server load, 1440 polls/day
+  #   - 15s: High accuracy, 5760 polls/day (use if you have fast-changing user base)
+  interval_seconds: 30
+
+  # Maximum retry attempts on network failure
+  # After max_retries consecutive failures, the bot will try to reconnect
+  max_retries: 3
+
+  # Exponential backoff base (seconds)
+  # Retry delays will be: 2s, 4s, 8s for base=2
+  retry_backoff_base: 2
+
+database:
+  # SQLite database file path
+  # This file will be created automatically if it doesn't exist
+  # Relative paths are relative to the working directory
+  # For Docker: use /app/data/ts_activity.sqlite to persist in volume
+  path: "./data/ts_activity.sqlite"
+
+  # Data retention policy (in days)
+  # Automatically delete data older than this many days
+  # Set to null to keep data forever
+  # Examples:
+  #   - 30: Keep last month
+  #   - 90: Keep last quarter
+  #   - 365: Keep last year
+  #   - null: Keep forever (no automatic deletion)
+  retention_days: null
+
+logging:
+  # Log level
+  # Options: DEBUG, INFO, WARNING, ERROR, CRITICAL
+  # - DEBUG: Very verbose, useful for troubleshooting
+  # - INFO: Normal operation logs (recommended)
+  # - WARNING: Only warnings and errors
+  # - ERROR: Only errors
+  level: "INFO"
+
+  # Log file path
+  # Set to null to log only to stdout/console (recommended for Docker)
+  # Set to a file path to enable file logging
+  # Examples:
+  #   - "./logs/bot.log": Log to file in logs directory
+  #   - null: Console only (Docker-friendly)
+  file: null
+
+  # Maximum log file size in bytes
+  # When file reaches this size, it will be rotated
+  # Default: 10485760 (10 MB)
+  max_bytes: 10485760
+
+  # Number of backup log files to keep
+  # When rotating, keep this many old log files
+  backup_count: 5
+
+api:
+  # Enable FastAPI web server
+  # Set to false if you only want to use the CLI
+  enabled: true
+
+  # API authentication key
+  # CHANGE THIS! Use a strong, random key for production
+  # Generate a secure key with: python -c "import secrets; print(secrets.token_urlsafe(32))"
+  # Clients must provide this key via X-API-Key header or ?api_key=... query param
+  api_key: "CHANGE_ME_SECRET_KEY_123"
+
+  # Server host binding
+  # - 0.0.0.0: Listen on all network interfaces (Docker, remote access)
+  # - 127.0.0.1: Listen only on localhost (local access only)
+  host: "0.0.0.0"
+
+  # Server port
+  # Default: 8080
+  # Make sure this port is not already in use
+  port: 8080
+
+  # Enable auto-generated API documentation
+  # When enabled, you can access:
+  #   - Swagger UI: http://your-server:8080/docs
+  #   - ReDoc: http://your-server:8080/redoc
+  # Set to false to disable docs (security through obscurity)
+  docs_enabled: true
+
+# ==============================================================================
+# Quick Start Guide
+# ==============================================================================
+#
+# 1. Copy this file to config.yaml:
+#    cp config.example.yaml config.yaml
+#
+# 2. Edit config.yaml and set:
+#    - teamspeak.base_url (your TS6 server URL)
+#    - teamspeak.api_key (your WebQuery API key)
+#    - api.api_key (generate a strong random key)
+#
+# 3. Install dependencies:
+#    pip install -r requirements.txt
+#
+# 4. Run the poller:
+#    python -m ts_activity_bot.poller
+#
+# 5. (Optional) Run the API server:
+#    python -m ts_activity_bot.api
+#
+# 6. (Optional) Use the CLI:
+#    python -m ts_activity_bot.cli top-users --days 7
+#
+# ==============================================================================
+# Docker Quick Start
+# ==============================================================================
+#
+# 1. Edit config.yaml with your settings
+#
+# 2. Start the services:
+#    docker-compose up -d
+#
+# 3. View logs:
+#    docker-compose logs -f
+#
+# 4. Access API:
+#    curl -H "X-API-Key: YOUR_API_KEY" http://localhost:8080/stats/summary?days=7
+#
+# 5. Use CLI:
+#    docker-compose exec poller python -m ts_activity_bot.cli top-users
+#
+# ==============================================================================
