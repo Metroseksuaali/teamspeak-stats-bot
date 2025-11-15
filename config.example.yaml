@@ -1,5 +1,6 @@
-# TeamSpeak 6 Activity Stats Bot Configuration
+# TeamSpeak Activity Stats Bot Configuration
 # ==============================================================================
+# Works with TeamSpeak 3 (3.13.0+) and TeamSpeak 6
 # Copy this file to config.yaml and fill in your server details
 # ==============================================================================
 
@@ -8,15 +9,34 @@ teamspeak:
   # - For HTTP: http://your-server.com:10080
   # - For HTTPS: https://your-server.com:10443 (recommended)
   # - For localhost: http://localhost:10080 or https://localhost:10443
-  base_url: "https://your-ts-server.com:10443"
+  #
+  # NOTE: Use HTTP/HTTPS WebQuery port (10080/10443), NOT raw ServerQuery port (10011)!
+  base_url: "http://your-ts-server.com:10080"
 
   # WebQuery API key
-  # Generate this in your TeamSpeak 6 server settings or query interface
-  # Example: To create an API key via SSH query:
-  #   1. Connect to SSH query: ssh serveradmin@your-server -p 10022
-  #   2. Run: apikeyadd scope=manage
-  #   3. Copy the generated key here
-  api_key: "YOUR_API_KEY_HERE"
+  # This is a LONG alphanumeric string (e.g., BAB4hHBG-RsfazBrPGqXmHRZzIkespN5digCBg)
+  # NOT a simple password like "password123"!
+  #
+  # How to create API key:
+  #
+  # === For TeamSpeak 3 (3.13.0+) ===
+  # Option A: Via SSH ServerQuery (port 10022):
+  #   ssh serveradmin@your-server.com -p 10022
+  #   use sid=1
+  #   apikeyadd scope=manage
+  #   # Copy the long "apikey=..." string
+  #
+  # Option B: Via Raw ServerQuery (telnet, port 10011):
+  #   telnet your-server.com 10011
+  #   login serveradmin YOUR_PASSWORD
+  #   use sid=1
+  #   apikeyadd scope=manage
+  #   quit
+  #
+  # === For TeamSpeak 6 ===
+  # Same as TS3, or use TS6 Web Admin Panel if available
+  #
+  api_key: "YOUR_LONG_API_KEY_HERE"
 
   # Virtual server ID
   # For most single-server setups, this is 1

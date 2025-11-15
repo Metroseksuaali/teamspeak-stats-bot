@@ -1,7 +1,7 @@
 """
-TeamSpeak 6 Activity Stats Bot
+TeamSpeak Activity Stats Bot
 
-A production-ready bot for tracking user activity on TeamSpeak 6 servers.
+A production-ready bot for tracking user activity on TeamSpeak 3 (3.13+) and TeamSpeak 6 servers.
 
 Copyright (C) 2025 Metroseksuaali
 

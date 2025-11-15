@@ -1,7 +1,7 @@
 """
-TeamSpeak 6 WebQuery client.
+TeamSpeak WebQuery client.
 
-Handles HTTP communication with TS6 WebQuery API.
+Handles HTTP communication with TeamSpeak 3 (3.13+) and TeamSpeak 6 WebQuery API.
 
 Copyright (C) 2025 Metroseksuaali
 Licensed under GNU AGPL v3.0 - see LICENSE file for details.
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 
 class TeamSpeakQueryClient:
-    """Client for TeamSpeak 6 WebQuery HTTP API."""
+    """Client for TeamSpeak 3/6 WebQuery HTTP API."""
 
     def __init__(self, config: TeamspeakConfig):
         """
@@ -35,6 +35,9 @@ class TeamSpeakQueryClient:
         self.timeout = config.timeout
         self.verify_ssl = config.verify_ssl
         self.include_query_clients = config.include_query_clients
+
+        # Debug: Verify API key is configured (does not expose credential details)
+        logger.debug(f"API key configured: {bool(self.api_key)}")
 
         # Create HTTP client with connection pooling
         self.client = httpx.Client(
