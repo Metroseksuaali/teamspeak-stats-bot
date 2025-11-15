@@ -493,15 +493,36 @@ A: Yes, SQLite database can be queried directly or export via API endpoints. Als
 
 ## License
 
-[Your License Here - e.g., MIT]
+This project is licensed under the **GNU Affero General Public License v3.0** (AGPL-3.0).
+
+**What this means:**
+- ✅ **Free to use and modify** - Anyone can use this bot for free
+- ✅ **Open source forever** - If you modify and deploy (even as a web service), you must share your changes
+- ✅ **Commercial use allowed** - But the code must remain open source
+- ❌ **No closed-source versions** - You cannot create proprietary forks
+
+See the [LICENSE](LICENSE) file for full details.
+
+## 💝 Support the Project
+
+If you find this bot useful and want to support its development:
+
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/metroseksuaali)
+
+Your support helps maintain and improve this project! All donations are appreciated but never required.
 
 ## Contributing
 
-Contributions welcome! Please open issues for bugs or feature requests.
+Contributions are welcome! Please feel free to:
+- 🐛 Report bugs via [GitHub Issues](https://github.com/Metroseksuaali/teamspeak6-activity/issues)
+- 💡 Suggest new features
+- 🔧 Submit pull requests
 
-## Support
+All contributions will be licensed under AGPL-3.0.
 
-- **Issues**: [GitHub Issues](https://github.com/your-repo/issues)
+## Support & Community
+
+- **Issues**: [GitHub Issues](https://github.com/Metroseksuaali/teamspeak6-activity/issues)
 - **TeamSpeak Community**: [community.teamspeak.com](https://community.teamspeak.com)
 - **Documentation**: See `config.example.yaml` for detailed configuration options
 

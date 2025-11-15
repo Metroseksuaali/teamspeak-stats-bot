@@ -2,6 +2,9 @@
 TeamSpeak 6 WebQuery client.
 
 Handles HTTP communication with TS6 WebQuery API.
+
+Copyright (C) 2025 Metroseksuaali
+Licensed under GNU AGPL v3.0 - see LICENSE file for details.
 """
 
 import logging
