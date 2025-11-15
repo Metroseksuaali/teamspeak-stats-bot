@@ -40,6 +40,12 @@ logger = logging.getLogger(__name__)
 # Initialize database backend (SQLite or PostgreSQL based on config)
 db = create_database(config)
 
+if config.database.backend != "sqlite":
+    logger.warning(
+        "Stats endpoints currently require SQLite – keeping analytics data in %s",
+        config.database.path,
+    )
+
 # Initialize stats calculator
 # NOTE: StatsCalculator currently requires SQLite backend for complex analytics queries.
 # For PostgreSQL deployments, use SQLite path for read operations (stats/analytics)
