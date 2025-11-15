@@ -11,13 +11,18 @@ A production-ready Python bot for tracking and analyzing user activity on **Team
 - **Hourly Heatmap**: Discover peak activity hours
 - **Daily Activity**: Analyze usage by day of week
 - **Idle Time Tracking**: Identify AFK users
-- **Channel Analytics**: Most popular channels
+- **Channel Analytics**: Most popular channels with **channel names**
 - **Growth Metrics**: New vs returning users
 - **Real-time Monitoring**: Currently online users
+- **User Lifetime Value (LTV)**: Score and categorize users (Power/Regular/Casual) based on engagement
+- **Away/Mute Statistics**: Track AFK status, mute patterns, and recording activity
+- **Channel Hopping**: Identify users who frequently switch channels
+- **Connection Patterns**: Analyze session frequency and duration
 
-### 🛠️ **Dual Interface**
-- **CLI**: Beautiful terminal interface with rich formatting
-- **REST API**: FastAPI-powered JSON endpoints with OpenAPI docs
+### 🛠️ **Triple Interface**
+- **CLI**: Beautiful terminal interface with rich formatting (19 commands)
+- **REST API**: FastAPI-powered JSON endpoints with OpenAPI docs (17 endpoints)
+- **GraphQL API**: Flexible querying at `/graphql` with interactive playground
 
 ### 🐳 **Production Ready**
 - Docker & docker-compose support
@@ -25,7 +30,9 @@ A production-ready Python bot for tracking and analyzing user activity on **Team
 - Exponential backoff retry logic
 - Health checks & monitoring
 - Configurable data retention
-- SQLite database with future-proof schema
+- SQLite database with automatic schema migration (v2→v3)
+- Channel name caching for improved performance
+- User aggregates for faster historical queries
 
 ### 🔒 **Security**
 - API key authentication
@@ -194,11 +201,17 @@ api:
 # Top users by online time
 python -m ts_activity_bot.cli top-users --days 7 --limit 10
 
-# Detailed user profile
+# Detailed user profile (with favorite channel names)
 python -m ts_activity_bot.cli user-stats <client_uid> --days 30
 
 # Top idle users
 python -m ts_activity_bot.cli top-idle --days 7
+
+# User Lifetime Value rankings (NEW!)
+python -m ts_activity_bot.cli lifetime-value --days 30 --limit 20
+
+# LTV distribution summary (NEW!)
+python -m ts_activity_bot.cli ltv-summary --days 30
 ```
 
 ### Server Analytics
@@ -212,8 +225,26 @@ python -m ts_activity_bot.cli daily-activity --days 30
 # Peak times
 python -m ts_activity_bot.cli peak-times --days 7
 
-# Channel statistics
+# Channel statistics (with channel names)
 python -m ts_activity_bot.cli channel-stats --days 7
+```
+
+### Advanced Analytics
+```bash
+# Away/AFK statistics (NEW!)
+python -m ts_activity_bot.cli away-stats --days 7
+
+# Mute and recording statistics (NEW!)
+python -m ts_activity_bot.cli mute-stats --days 7
+
+# Server group membership (NEW!)
+python -m ts_activity_bot.cli server-groups --days 7
+
+# Channel hoppers (NEW!)
+python -m ts_activity_bot.cli channel-hoppers --days 7 --limit 10
+
+# Connection patterns (NEW!)
+python -m ts_activity_bot.cli connection-patterns --days 7 --limit 10
 ```
 
 ### Growth & Monitoring
@@ -221,8 +252,8 @@ python -m ts_activity_bot.cli channel-stats --days 7
 # Growth metrics
 python -m ts_activity_bot.cli growth --days 7
 
-# Currently online users
-python -m ts_activity_bot.cli online-now
+# Currently online users (with channel names)
+python -m ts_activity_bot.cli online-now --detailed
 
 # Overall summary
 python -m ts_activity_bot.cli summary --days 7
@@ -256,21 +287,61 @@ curl http://localhost:8080/stats/summary?api_key=YOUR_API_KEY
 | `GET /health` | Health check (no auth required) |
 | `GET /stats/summary?days=7` | Overall statistics summary |
 | `GET /stats/top-users?days=7&limit=10` | Top users by online time |
-| `GET /stats/user/{uid}?days=30` | Detailed user statistics |
+| `GET /stats/user/{uid}?days=30` | Detailed user statistics with favorite channels |
 | `GET /stats/hourly-heatmap?days=7` | Average users by hour |
 | `GET /stats/daily-activity?days=30` | Average users by day of week |
 | `GET /stats/top-idle?days=7&limit=10` | Users with highest idle time |
 | `GET /stats/peak-times?days=7&limit=10` | Server peak times |
-| `GET /stats/channels?days=7` | Channel popularity |
+| `GET /stats/channels?days=7` | **Channel popularity with names** |
 | `GET /stats/growth?days=7` | New vs returning users |
-| `GET /stats/online-now` | Currently online users |
+| `GET /stats/online-now` | **Currently online users with channel names** |
 | `GET /stats/database` | Database statistics |
+| `GET /stats/away?days=7&limit=10` | Away/AFK statistics |
+| `GET /stats/mute?days=7` | Mute and recording statistics |
+| `GET /stats/server-groups?days=7` | Server group membership |
+| `GET /stats/channel-hoppers?days=7&limit=10` | Users who switch channels frequently |
+| `GET /stats/connection-patterns?days=7&limit=10` | Session patterns and reconnection frequency |
+| **`GET /stats/lifetime-value?days=&limit=50`** | **User Lifetime Value (LTV) rankings** |
+| **`GET /stats/lifetime-value/summary?days=`** | **LTV distribution summary** |
+
+### GraphQL API
+
+Access the GraphQL playground at: **http://localhost:8080/graphql**
+
+**Example query:**
+```graphql
+query {
+  topUsers(days: 7, limit: 5) {
+    nickname
+    onlineHours
+  }
+  lifetimeValue(days: null, limit: 10) {
+    nickname
+    ltvScore
+    categoryLabel
+    onlineHours
+    daysActive
+    channelsVisited
+  }
+  channels(days: 7) {
+    channelName
+    totalVisits
+    uniqueUsers
+  }
+}
+```
+
+**All available queries:**
+- `topUsers`, `userStats`, `channels`, `hourlyHeatmap`, `dailyActivity`
+- `summary`, `peakTimes`, `onlineNow`, `growthMetrics`
+- `lifetimeValue`, `ltvSummary`
 
 ### API Documentation
 
 When `api.docs_enabled: true` in config:
 - **Swagger UI**: http://localhost:8080/docs
 - **ReDoc**: http://localhost:8080/redoc
+- **GraphQL Playground**: http://localhost:8080/graphql
 
 ---
 
