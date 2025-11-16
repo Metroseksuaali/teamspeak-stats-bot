@@ -108,7 +108,8 @@ class APIConfig(BaseModel):
     """API server settings."""
 
     enabled: bool = Field(True, description="Enable FastAPI web server")
-    api_key: str = Field("CHANGE_ME_SECRET_KEY_123", description="API authentication key")
+    bot_token: str = Field("CHANGE_ME_SECRET_KEY_123", description="Bot API authentication token")
+    api_key: Optional[str] = Field(None, description="[DEPRECATED] Use bot_token instead")
     host: str = Field("0.0.0.0", description="Server host binding")
     port: int = Field(8080, description="Server port")
     docs_enabled: bool = Field(True, description="Enable auto-generated API docs")
@@ -120,6 +121,18 @@ class APIConfig(BaseModel):
         if v < 1 or v > 65535:
             raise ValueError("port must be between 1 and 65535")
         return v
+
+    def get_auth_token(self) -> str:
+        """
+        Get authentication token with backward compatibility.
+
+        Returns bot_token if set, otherwise falls back to api_key for backward compatibility.
+        """
+        if self.bot_token != "CHANGE_ME_SECRET_KEY_123":
+            return self.bot_token
+        if self.api_key is not None:
+            return self.api_key
+        return self.bot_token
 
 
 class Config(BaseSettings):

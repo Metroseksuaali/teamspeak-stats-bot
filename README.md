@@ -61,10 +61,10 @@ A production-ready Python bot for tracking and analyzing user activity on **Team
    ```yaml
    teamspeak:
      base_url: "https://your-ts-server.com:10443"
-     api_key: "YOUR_TEAMSPEAK_API_KEY"
+     api_key: "YOUR_TEAMSPEAK_API_KEY"  # From TeamSpeak: apikeyadd scope=manage
 
    api:
-     api_key: "YOUR_SECRET_API_KEY"  # Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
+     bot_token: "YOUR_SECRET_BOT_TOKEN"  # Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
    ```
 
 3. **Start services**:
@@ -181,8 +181,8 @@ See `config.example.yaml` for all options with detailed comments. Key settings:
 
 ```yaml
 teamspeak:
-  base_url: "https://your-server.com:10443"  # Your TS6 server
-  api_key: "YOUR_API_KEY"                     # WebQuery API key
+  base_url: "https://your-server.com:10443"  # Your TS server
+  api_key: "YOUR_TEAMSPEAK_API_KEY"          # TeamSpeak WebQuery API key (from apikeyadd)
   verify_ssl: true                            # false for self-signed certs
 
 polling:
@@ -195,7 +195,7 @@ database:
   retention_days: null                        # null = keep forever, or set days
 
 api:
-  api_key: "SECRET_KEY"                       # Protect your stats!
+  bot_token: "YOUR_SECRET_BOT_TOKEN"          # Bot API token (your own - not TeamSpeak's)
   port: 8080
 ```
 
@@ -514,7 +514,280 @@ SELECT client_uid, nickname, COUNT(*) as visits FROM client_snapshots GROUP BY c
 
 ---
 
+## Deployment Scenarios
+
+This section covers different deployment configurations based on where your TeamSpeak server and bot are running.
+
+### Scenario 1: TeamSpeak on Host + Bot in Docker (Same Machine) ✅ RECOMMENDED
+
+**Use Case**: TeamSpeak server running directly on host, bot in Docker container on the same machine.
+
+**Network Setup**: Use Docker host network mode to allow container to access `localhost`.
+
+**Configuration**:
+
+1. **Edit `docker-compose.yml`**:
+```yaml
+services:
+  poller:
+    network_mode: "host"  # Add this
+    # Remove 'ports:' section (not needed with host mode)
+
+  api:
+    network_mode: "host"  # Add this
+    # Remove 'ports:' section
+```
+
+2. **Edit `config.yaml`**:
+```yaml
+teamspeak:
+  base_url: "http://localhost:10080"  # Use localhost
+  api_key: "YOUR_API_KEY"
+  verify_ssl: false  # No SSL needed for localhost
+```
+
+3. **Start services**:
+```bash
+docker-compose up -d
+```
+
+**Advantages**: Fast, secure (no network exposure), simple configuration.
+
+---
+
+### Scenario 2: TeamSpeak on Host + Bot in Docker (Different Machines)
+
+**Use Case**: TeamSpeak server on one machine, bot on another machine.
+
+**Network Setup**: Ensure TeamSpeak WebQuery port (10080 or 10443) is accessible over network.
+
+**Configuration**:
+
+1. **On TeamSpeak server** - Open firewall port:
+```bash
+# Allow incoming connections on WebQuery port
+sudo ufw allow 10080/tcp  # For HTTP
+# OR
+sudo ufw allow 10443/tcp  # For HTTPS
+```
+
+2. **Edit `config.yaml`** on bot machine:
+```yaml
+teamspeak:
+  base_url: "http://teamspeak-server.example.com:10080"  # Use server hostname/IP
+  api_key: "YOUR_API_KEY"
+  verify_ssl: true  # Or false for self-signed certs
+```
+
+3. **Test connection**:
+```bash
+curl -H "x-api-key: YOUR_API_KEY" http://teamspeak-server.example.com:10080/1/serverinfo
+```
+
+4. **Start bot**:
+```bash
+docker-compose up -d
+```
+
+**Security Note**: Consider using HTTPS (port 10443) and valid SSL certificates when exposing WebQuery over network.
+
+---
+
+### Scenario 3: Both TeamSpeak and Bot in Docker (Same Docker Network)
+
+**Use Case**: TeamSpeak server running in Docker, bot in Docker, using Docker network for communication.
+
+**Network Setup**: Create shared Docker network.
+
+**Configuration**:
+
+1. **Create shared network**:
+```bash
+docker network create ts-network
+```
+
+2. **Connect TeamSpeak container** to network:
+```bash
+docker network connect ts-network <teamspeak-container-name>
+```
+
+3. **Edit `docker-compose.yml`** for bot:
+```yaml
+version: '3.8'
+
+services:
+  poller:
+    networks:
+      - ts-network
+    # ... rest of config
+
+  api:
+    networks:
+      - ts-network
+    # ... rest of config
+
+networks:
+  ts-network:
+    external: true  # Use existing network
+```
+
+4. **Edit `config.yaml`**:
+```yaml
+teamspeak:
+  base_url: "http://<teamspeak-container-name>:10080"  # Use container name as hostname
+  api_key: "YOUR_API_KEY"
+  verify_ssl: false
+```
+
+5. **Start bot**:
+```bash
+docker-compose up -d
+```
+
+**Advantages**: Network isolation, no port exposure to host, container name resolution.
+
+---
+
+### Scenario 4: TeamSpeak on Host + Bot on Host (Same Machine)
+
+**Use Case**: Both running directly on host without Docker (manual installation).
+
+**Configuration**:
+
+1. **Install dependencies**:
+```bash
+pip install -r requirements.txt
+```
+
+2. **Edit `config.yaml`**:
+```yaml
+teamspeak:
+  base_url: "http://localhost:10080"
+  api_key: "YOUR_API_KEY"
+  verify_ssl: false
+```
+
+3. **Run services**:
+```bash
+# Terminal 1 - Poller
+python -m ts_activity_bot.poller
+
+# Terminal 2 - API (optional)
+python -m ts_activity_bot.api
+```
+
+**Advantages**: Simple, no Docker overhead, easy debugging.
+
+---
+
+### Scenario 5: TeamSpeak on Host + Bot on Host (Different Machines)
+
+**Use Case**: TeamSpeak server on one host, bot on another host, no Docker.
+
+**Configuration**:
+
+Same as Scenario 2, but run bot directly with Python:
+
+1. **Open firewall on TeamSpeak server** (see Scenario 2)
+
+2. **Edit `config.yaml`** on bot machine:
+```yaml
+teamspeak:
+  base_url: "http://teamspeak-server.example.com:10080"
+  api_key: "YOUR_API_KEY"
+```
+
+3. **Run bot**:
+```bash
+python -m ts_activity_bot.poller
+```
+
+---
+
+### Quick Reference Table
+
+| TeamSpeak | Bot | Network Config | `base_url` Example |
+|-----------|-----|----------------|-------------------|
+| Host | Docker (same) | `network_mode: "host"` | `http://localhost:10080` |
+| Host | Docker (different) | Default bridge | `http://ts-server.com:10080` |
+| Docker | Docker (same network) | Shared network | `http://ts-container:10080` |
+| Host | Host (same) | N/A | `http://localhost:10080` |
+| Host | Host (different) | N/A | `http://ts-server.com:10080` |
+
+---
+
 ## Troubleshooting
+
+### 401 Unauthorized Error
+
+**Symptoms**:
+```
+HTTP error 401: {"status":{"code":5122,"extra_message":"invalid api key","message":"invalid apikey"}}
+```
+
+**Common Causes & Solutions**:
+
+#### 1. Invalid or Expired API Key
+**Solution**: Generate a new API key:
+```bash
+ssh serveradmin@your-server.com -p 10022
+use sid=1
+apikeyadd scope=manage
+# Copy the new key to config.yaml
+```
+
+#### 2. WebQuery Port Not Accessible (Firewall/Network Issue) ⚠️ MOST COMMON
+**Symptoms**: 401 error when connecting from different machine, but works on localhost.
+
+**Diagnosis**:
+```bash
+# From bot machine, test if WebQuery port is reachable:
+curl -H "x-api-key: YOUR_KEY" http://teamspeak-server:10080/1/serverinfo
+
+# If you get "Connection refused" or timeout → firewall blocking
+# If you get 401 → API key issue
+# If you get 200 + data → working correctly
+```
+
+**Solution A - Use localhost (if on same machine)**:
+```yaml
+# config.yaml
+teamspeak:
+  base_url: "http://localhost:10080"  # Use localhost instead of external address
+```
+
+**AND** configure Docker with host network:
+```yaml
+# docker-compose.yml
+services:
+  poller:
+    network_mode: "host"
+  api:
+    network_mode: "host"
+```
+
+**Solution B - Open firewall (if on different machines)**:
+```bash
+# On TeamSpeak server machine
+sudo ufw allow 10080/tcp  # For HTTP
+# OR
+sudo ufw allow 10443/tcp  # For HTTPS
+
+# Verify port is open
+sudo netstat -tlnp | grep 10080
+```
+
+**Security Recommendation**: If possible, use Solution A (localhost with host network). Only expose WebQuery ports (10080/10443) to the network if absolutely necessary. These ports should **not** be exposed to the public internet.
+
+#### 3. Wrong Virtual Server ID
+**Solution**: Verify your server ID:
+```bash
+ssh serveradmin@your-server.com -p 10022
+serverlist
+# Use the 'virtualserver_id' value in config.yaml
+```
+
+---
 
 ### Connection Issues
 
@@ -524,13 +797,18 @@ SELECT client_uid, nickname, COUNT(*) as visits FROM client_snapshots GROUP BY c
 1. Verify `base_url` is correct (check port: 10080 for HTTP, 10443 for HTTPS)
 2. Check API key is valid: `curl -H "x-api-key: YOUR_KEY" https://your-server:10443/1/serverinfo`
 3. If using self-signed cert, set `verify_ssl: false`
-4. Check firewall allows outbound connections to TS server
+4. Check firewall allows outbound connections from bot to TS server
+5. For Docker deployments on same host: use `network_mode: "host"` and `base_url: "http://localhost:10080"`
+
+---
 
 ### SSL Certificate Errors
 
 **Problem**: "SSL: CERTIFICATE_VERIFY_FAILED"
 
 **Solution**: Set `verify_ssl: false` in config (only for self-signed certs)
+
+---
 
 ### Permission Errors
 
@@ -541,11 +819,23 @@ SELECT client_uid, nickname, COUNT(*) as visits FROM client_snapshots GROUP BY c
 chmod -R 755 ./data
 ```
 
+---
+
 ### API Returns 401/403
 
-**Problem**: "Unauthorized" or "Forbidden"
+**Problem**: "Unauthorized" or "Forbidden" when calling bot's REST API (not TeamSpeak)
 
-**Solution**: Check `X-API-Key` header matches `api.api_key` in config
+**Solution**: Check `X-API-Key` header matches `api.bot_token` in config:
+```bash
+# Correct usage
+curl -H "X-API-Key: YOUR_BOT_TOKEN" http://localhost:8080/stats/summary
+
+# Note: This is different from TeamSpeak API key (teamspeak.api_key)
+# - teamspeak.api_key = TeamSpeak server API (for bot to connect to TS)
+# - api.bot_token = Bot's own API token (for clients to access bot's REST API)
+```
+
+---
 
 ### No Data in Statistics
 
@@ -555,11 +845,54 @@ chmod -R 755 ./data
 1. Poller hasn't run yet (wait at least one poll interval)
 2. No users were online during polling
 3. Database file doesn't exist (check `data/` directory)
+4. Poller is failing to connect to TeamSpeak (check logs)
 
 **Check**:
 ```bash
 # Verify database exists and has data
 docker-compose exec poller python -m ts_activity_bot.cli db-stats
+
+# Check poller logs for errors
+docker-compose logs poller
+
+# Verify database file exists
+ls -lh data/ts_activity.sqlite
+```
+
+---
+
+### Docker Container Can't Access Host Services
+
+**Problem**: Bot running in Docker can't connect to TeamSpeak on host machine using `localhost`.
+
+**Solution**: Use `network_mode: "host"` in docker-compose.yml (see Deployment Scenarios above).
+
+**Alternative** (Linux with Docker 20.10+): Use `host.docker.internal`:
+```yaml
+teamspeak:
+  base_url: "http://host.docker.internal:10080"
+```
+
+---
+
+### Health Check Failing
+
+**Problem**: Docker container shows "unhealthy" status.
+
+**Diagnosis**:
+```bash
+docker-compose ps  # Check health status
+docker inspect ts6-activity-poller | grep -A 10 Health  # See detailed health info
+```
+
+**Common Causes**:
+1. Database file not created yet (wait for first successful poll)
+2. Wrong database path in config
+3. Health check command failing
+
+**Solution**: Check logs and ensure poller successfully connects to TeamSpeak:
+```bash
+docker-compose logs poller | grep "Poll successful"
 ```
 
 ---
