@@ -744,19 +744,18 @@ docker logs ts3-server | grep query_ip_allowlist
 
 **Solution**: Allow Docker network in TeamSpeak configuration.
 
-For test environment (`docker-compose.test.yml`):
-```yaml
-teamspeak:
-  environment:
-    - TS3SERVER_QUERY_IP_ALLOWLIST=0.0.0.0/0  # Allows all IPs (test only!)
-```
-
-For production (more secure):
 ```yaml
 teamspeak:
   environment:
     # Allow specific Docker network CIDR
     - TS3SERVER_QUERY_IP_ALLOWLIST=172.16.0.0/12,127.0.0.1/32
+```
+
+Or for testing (less secure, allows all IPs):
+```yaml
+teamspeak:
+  environment:
+    - TS3SERVER_QUERY_IP_ALLOWLIST=0.0.0.0/0
 ```
 
 Then restart TeamSpeak container:
