@@ -936,6 +936,18 @@ docker-compose logs poller | grep "Poll successful"
 
 ---
 
+### External TeamSpeak Server
+
+**Connecting to TeamSpeak on different machine/network?**
+
+See [EXTERNAL-SERVER.md](EXTERNAL-SERVER.md) for comprehensive guide covering:
+- IP allowlist configuration for external connections
+- Firewall and security setup
+- Production deployment scenarios
+- Troubleshooting external connections
+
+---
+
 ## Production Deployment
 
 ### Recommendations
@@ -1054,6 +1066,23 @@ A: None! Both versions use the same WebQuery HTTP API. The bot works identically
 
 **Q: Can I use SSH ServerQuery instead of WebQuery?**
 A: Not directly. This bot uses the WebQuery **HTTP API** (port 10080/10443). However, you use SSH ServerQuery (port 10022) or Raw ServerQuery (port 10011) to **create the API key** that the bot then uses for HTTP requests.
+
+**Q: What's the difference between WebQuery and Raw/SSH ServerQuery?**
+A: TeamSpeak has 3 query protocols:
+- **Raw ServerQuery** (port 10011): Telnet-style text protocol, uses login/password auth
+- **SSH ServerQuery** (port 10022): Encrypted Raw ServerQuery, uses SSH keys
+- **WebQuery HTTP API** (port 10080/10443): REST API, uses API key + IP allowlist ⬅️ **This bot**
+
+Tools like YaTQA use Raw/SSH ServerQuery, while this bot uses the modern WebQuery HTTP API.
+
+**Q: Can I connect to a TeamSpeak server on a different machine/network?**
+A: **Yes!** See [EXTERNAL-SERVER.md](EXTERNAL-SERVER.md) for detailed guide on:
+- Configuring IP allowlist for external connections
+- Firewall setup
+- Security best practices
+- Production deployment examples
+
+The IP allowlist requirement (TS3SERVER_QUERY_IP_ALLOWLIST) only applies to WebQuery HTTP API, not Raw/SSH ServerQuery.
 
 **Q: How much data will be stored?**
 A: Depends on poll interval and user count. Example: 10 users, 30s polls = ~1MB/day. Use `retention_days` to auto-delete old data.
