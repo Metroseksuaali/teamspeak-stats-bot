@@ -10,7 +10,7 @@ teamspeak:
   # Start container with: docker-compose -f docker-compose.test.yml up -d teamspeak
   # Then check logs: docker-compose -f docker-compose.test.yml logs teamspeak
   # Look for: apikey=BAB4hHBG-RsfazBrPGqXmHRZzIkespN5digCBg...
-  api_key: "REPLACE_WITH_ACTUAL_API_KEY_FROM_TS3_CONTAINER"
+  api_key: "YOUR_TEAMSPEAK_API_KEY_HERE"
 
   virtual_server_id: 1
   verify_ssl: false  # No SSL needed in test environment
