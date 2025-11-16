@@ -15,10 +15,13 @@ teamspeak:
   virtual_server_id: 1
   verify_ssl: false  # No SSL needed in test environment
   timeout: 10
-  include_query_clients: false
+  # Set to true for testing to see ALL clients (including query clients)
+  # In production, set to false to exclude query bots
+  include_query_clients: true
 
 polling:
-  interval_seconds: 30
+  # Increased from 30 to 60 seconds to avoid "client is flooding" errors
+  interval_seconds: 60
   max_retries: 3
   retry_backoff_base: 2
 

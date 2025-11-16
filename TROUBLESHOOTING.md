@@ -307,6 +307,101 @@ docker compose -f docker-compose.test.yml logs -f
 
 ---
 
+## Bot Shows 0 Clients Despite Users Being Connected
+
+**Symptom:**
+- Users are connected to TeamSpeak server
+- Bot logs show `Fetched 0 clients from TeamSpeak server`
+- Users might see "client is flooding" error in TeamSpeak
+
+**Root Cause 1: Query Client Filtering**
+
+By default, `include_query_clients: false` filters out clients where `client_type = 1` (query clients).
+
+If TeamSpeak classifies you as a query client (which can happen due to flooding protection or if you connected via query interface), you'll be filtered out.
+
+**Solution:**
+
+Edit `config.test.yaml`:
+
+```yaml
+teamspeak:
+  # Set to true for testing to see ALL clients
+  include_query_clients: true
+```
+
+**Root Cause 2: Polling Too Aggressive (Flooding)**
+
+If polling interval is too short (e.g., 30 seconds), TeamSpeak may trigger flood protection and:
+- Temporarily ban the bot's queries
+- Classify regular clients as query clients
+- Show "client is flooding" errors
+
+**Solution:**
+
+Edit `config.test.yaml`:
+
+```yaml
+polling:
+  # Increase from 30 to 60 seconds
+  interval_seconds: 60
+```
+
+**Root Cause 3: Multiple Poller Instances**
+
+Check if you have multiple poller containers running:
+
+```powershell
+docker compose -f docker-compose.test.yml ps
+```
+
+If you see multiple `ts3-stats-poller` containers, stop all and start fresh:
+
+```powershell
+docker compose -f docker-compose.test.yml down
+docker compose -f docker-compose.test.yml up -d
+```
+
+**Root Cause 4: Connected to Wrong Port**
+
+Make sure you connected to **voice port 9987**, not query ports:
+- ✅ `localhost:9987` - Voice (correct)
+- ❌ `localhost:10011` - Raw ServerQuery (wrong)
+- ❌ `localhost:10022` - SSH ServerQuery (wrong)
+
+**Verification:**
+
+After making changes, restart and test:
+
+```powershell
+# Restart poller to reload config
+docker compose -f docker-compose.test.yml restart poller
+
+# Wait 60 seconds for next poll
+Start-Sleep -Seconds 65
+
+# Check logs
+docker compose -f docker-compose.test.yml logs poller --tail 20
+
+# Should now see: "Fetched X clients from TeamSpeak server" (X > 0)
+```
+
+**Test API directly:**
+
+```powershell
+$apiKey = "YOUR_API_KEY_HERE"
+$headers = @{"x-api-key" = $apiKey}
+
+# This should show ALL clients (including query clients if any)
+Invoke-WebRequest -Uri "http://localhost:10080/1/clientlist?-uid=&-times=" -Headers $headers | Select-Object -ExpandProperty Content
+```
+
+Check the response for your client. Look for `client_type` field:
+- `"client_type": 0` = Normal user (should be tracked)
+- `"client_type": 1` = Query client (filtered out if `include_query_clients: false`)
+
+---
+
 ## Other Common Issues
 
 ### Database Connection Errors
