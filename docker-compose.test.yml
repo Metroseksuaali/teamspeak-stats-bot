@@ -1,0 +1,181 @@
+version: '3.8'
+
+# ==============================================================================
+# TEST ENVIRONMENT: TeamSpeak 3 Server + Stats Bot
+# ==============================================================================
+# This is a complete test environment with both TS3 server and the bot.
+# DO NOT use in production! This is for local testing only.
+# ==============================================================================
+
+services:
+  # ===========================================================================
+  # TeamSpeak 3 Server
+  # ===========================================================================
+  teamspeak:
+    image: teamspeak:latest
+    container_name: ts3-test-server
+    restart: unless-stopped
+
+    ports:
+      - "9987:9987/udp"  # Voice
+      - "10011:10011"    # ServerQuery (Raw)
+      - "10022:10022"    # ServerQuery (SSH)
+      - "10080:10080"    # WebQuery (HTTP) - BOT USES THIS
+      - "10443:10443"    # WebQuery (HTTPS)
+      - "30033:30033"    # File Transfer
+
+    environment:
+      - TS3SERVER_LICENSE=accept
+      - TS3SERVER_QUERY_PROTOCOLS=raw,ssh,http
+
+    volumes:
+      - ts3_data:/var/ts3server/
+
+    networks:
+      - ts-test-network
+
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "10080"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  # ===========================================================================
+  # Stats Bot - Poller Service
+  # ===========================================================================
+  poller:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ts3-stats-poller
+    restart: unless-stopped
+
+    depends_on:
+      teamspeak:
+        condition: service_healthy
+
+    volumes:
+      - ./config.test.yaml:/app/config.yaml:ro
+      - ./test-data:/app/data
+      - ./test-logs:/app/logs
+
+    command: python -m ts_activity_bot.poller
+
+    environment:
+      - TZ=UTC
+
+    networks:
+      - ts-test-network
+
+    healthcheck:
+      test: ["CMD", "python", "-c", "import sqlite3; conn=sqlite3.connect('/app/data/ts_activity.sqlite'); conn.close()"]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  # ===========================================================================
+  # Stats Bot - API Service
+  # ===========================================================================
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ts3-stats-api
+    restart: unless-stopped
+
+    depends_on:
+      poller:
+        condition: service_healthy
+
+    ports:
+      - "8080:8080"  # Bot API
+
+    volumes:
+      - ./config.test.yaml:/app/config.yaml:ro
+      - ./test-data:/app/data:ro
+      - ./test-logs:/app/logs
+
+    command: python -m ts_activity_bot.api
+
+    environment:
+      - TZ=UTC
+
+    networks:
+      - ts-test-network
+
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+# ==============================================================================
+# Shared Network
+# ==============================================================================
+networks:
+  ts-test-network:
+    driver: bridge
+
+# ==============================================================================
+# Persistent Volumes
+# ==============================================================================
+volumes:
+  ts3_data:
+    driver: local
+
+# ==============================================================================
+# SETUP INSTRUCTIONS
+# ==============================================================================
+#
+# 1. Create test configuration:
+#    cp config.example.yaml config.test.yaml
+#
+# 2. Edit config.test.yaml:
+#    teamspeak:
+#      base_url: "http://teamspeak:10080"  # Use container name!
+#      api_key: "YOUR_API_KEY_HERE"        # Get from step 4
+#
+# 3. Create directories:
+#    mkdir -p test-data test-logs
+#
+# 4. Start TeamSpeak server first:
+#    docker-compose -f docker-compose.test.yml up -d teamspeak
+#    docker-compose -f docker-compose.test.yml logs teamspeak
+#
+#    Look for output like:
+#    ------------------------------------------------------------------
+#                          I M P O R T A N T
+#    ------------------------------------------------------------------
+#    Server Query Admin Account created
+#     loginname= "serveradmin", password= "XXXXXXXXX"
+#    apikey=BAB4hHBG-RsfazBrPGqXmHRZzIkespN5digCBg...
+#    ------------------------------------------------------------------
+#
+#    COPY THE API KEY! You need it for config.test.yaml
+#
+# 5. Update config.test.yaml with the API key from step 4
+#
+# 6. Start all services:
+#    docker-compose -f docker-compose.test.yml up -d
+#
+# 7. View logs:
+#    docker-compose -f docker-compose.test.yml logs -f
+#
+# 8. Test bot API:
+#    curl -H "X-API-Key: YOUR_BOT_TOKEN" http://localhost:8080/stats/summary
+#
+# 9. Connect to TeamSpeak server:
+#    Server: localhost:9987
+#    (Use the serveradmin password from step 4 if needed)
+#
+# 10. Stop everything:
+#     docker-compose -f docker-compose.test.yml down
+#
+# 11. Clean up data (optional):
+#     docker-compose -f docker-compose.test.yml down -v
+#     rm -rf test-data test-logs
+#
+# ==============================================================================
