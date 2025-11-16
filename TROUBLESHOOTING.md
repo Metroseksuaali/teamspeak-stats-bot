@@ -330,26 +330,17 @@ teamspeak:
   include_query_clients: true
 ```
 
-**Root Cause 2: Polling Too Aggressive (Flooding)**
+**Root Cause 2: Multiple Poller Instances (Flooding)**
 
-If polling interval is too short (e.g., 30 seconds), TeamSpeak may trigger flood protection and:
-- Temporarily ban the bot's queries
-- Classify regular clients as query clients
-- Show "client is flooding" errors
+TeamSpeak has flood protection: **max 10 commands per 3 seconds** (≈200 queries/min).
+
+A single poller instance with 30s interval = 2 queries/min is **completely safe**.
+
+However, if you have **multiple poller instances** running simultaneously (e.g., 20 instances), this can trigger flood protection.
 
 **Solution:**
 
-Edit `config.test.yaml`:
-
-```yaml
-polling:
-  # Increase from 30 to 60 seconds
-  interval_seconds: 60
-```
-
-**Root Cause 3: Multiple Poller Instances**
-
-Check if you have multiple poller containers running:
+Check for duplicate containers:
 
 ```powershell
 docker compose -f docker-compose.test.yml ps
@@ -362,7 +353,9 @@ docker compose -f docker-compose.test.yml down
 docker compose -f docker-compose.test.yml up -d
 ```
 
-**Root Cause 4: Connected to Wrong Port**
+**Note:** The test environment has `TS3SERVER_QUERY_IP_ALLOWLIST=0.0.0.0/0` which bypasses flood protection for the bot. If you still get flooding errors, check for other scripts/tools polling the same server.
+
+**Root Cause 3: Connected to Wrong Port**
 
 Make sure you connected to **voice port 9987**, not query ports:
 - ✅ `localhost:9987` - Voice (correct)
@@ -377,8 +370,8 @@ After making changes, restart and test:
 # Restart poller to reload config
 docker compose -f docker-compose.test.yml restart poller
 
-# Wait 60 seconds for next poll
-Start-Sleep -Seconds 65
+# Wait 30 seconds for next poll
+Start-Sleep -Seconds 35
 
 # Check logs
 docker compose -f docker-compose.test.yml logs poller --tail 20

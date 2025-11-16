@@ -20,8 +20,9 @@ teamspeak:
   include_query_clients: true
 
 polling:
-  # Increased from 30 to 60 seconds to avoid "client is flooding" errors
-  interval_seconds: 60
+  # 30s is safe (2 queries/min << 200 queries/min flood limit)
+  # IP whitelist in docker-compose.test.yml bypasses flood protection anyway
+  interval_seconds: 30
   max_retries: 3
   retry_backoff_base: 2
 
