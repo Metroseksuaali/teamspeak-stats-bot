@@ -40,14 +40,16 @@ logger = logging.getLogger(__name__)
 # Initialize database backend (SQLite or PostgreSQL based on config)
 db = create_database(config)
 
-# Initialize stats calculator only when SQLite backend is active
-stats_calc: Optional[StatsCalculator]
-if config.database.backend == "sqlite":
-    stats_calc = StatsCalculator(config.database.path, config.polling.interval_seconds)
-else:
-    stats_calc = None
+# Initialize stats calculator (always points at the SQLite analytics file)
+stats_calc: StatsCalculator = StatsCalculator(
+    config.database.path,
+    config.polling.interval_seconds,
+)
+if config.database.backend != "sqlite":
     logger.warning(
-        "Stats/analytics endpoints are disabled because the configured backend (%s) is not SQLite",
+        "Analytics endpoints still read from the SQLite database at %s while backend=%s. "
+        "Keep that file in sync (or provide a replica) if you need fresh stats.",
+        config.database.path,
         config.database.backend,
     )
 
@@ -281,18 +283,6 @@ class LTVSummary(BaseModel):
 # Endpoints
 
 
-def _require_stats_calculator() -> StatsCalculator:
-    """Return stats calculator or raise if analytics backend is unavailable."""
-    if stats_calc is None:
-        raise HTTPException(
-            status_code=503,
-            detail=(
-                "Stats endpoints are disabled because database.backend is not 'sqlite'. "
-                "Switch analytics back to SQLite to re-enable these APIs."
-            ),
-        )
-    return stats_calc
-
 @app.get("/health", response_model=HealthResponse)
 async def health_check():
     """Health check endpoint (no authentication required)."""
@@ -344,7 +334,7 @@ async def get_summary(
 ):
     """Get overall statistics summary."""
     try:
-        stats = _require_stats_calculator()
+        stats = stats_calc
         return stats.get_summary(days=days)
     except Exception as e:
         logger.error(f"Error getting summary: {e}")
@@ -359,7 +349,7 @@ async def get_top_users(
 ):
     """Get top users by online time."""
     try:
-        stats = _require_stats_calculator()
+        stats = stats_calc
         users = stats.get_top_users(days=days, limit=limit)
         return [
             {
@@ -384,7 +374,7 @@ async def get_user_stats(
 ):
     """Get detailed statistics for a specific user."""
     try:
-        stats = _require_stats_calculator()
+        stats = stats_calc
         user = stats.get_user_stats(client_uid, days=days)
         if not user:
             raise HTTPException(status_code=404, detail="User not found")
@@ -403,7 +393,7 @@ async def get_hourly_heatmap(
 ):
     """Get average user count by hour of day."""
     try:
-        stats = _require_stats_calculator()
+        stats = stats_calc
         return stats.get_hourly_heatmap(days=days)
     except Exception as e:
         logger.error(f"Error getting hourly heatmap: {e}")
@@ -417,7 +407,7 @@ async def get_daily_activity(
 ):
     """Get average user count by day of week."""
     try:
-        stats = _require_stats_calculator()
+        stats = stats_calc
         return stats.get_daily_activity(days=days)
     except Exception as e:
         logger.error(f"Error getting daily activity: {e}")
@@ -432,7 +422,7 @@ async def get_top_idle(
 ):
     """Get users with highest average idle time."""
     try:
-        stats = _require_stats_calculator()
+        stats = stats_calc
         return stats.get_top_idle_users(days=days, limit=limit)
     except Exception as e:
         logger.error(f"Error getting top idle users: {e}")
@@ -447,7 +437,7 @@ async def get_peak_times(
 ):
     """Get times when server had most users online."""
     try:
-        stats = _require_stats_calculator()
+        stats = stats_calc
         return stats.get_peak_times(days=days, limit=limit)
     except Exception as e:
         logger.error(f"Error getting peak times: {e}")
@@ -461,7 +451,7 @@ async def get_channel_stats(
 ):
     """Get channel popularity statistics."""
     try:
-        stats = _require_stats_calculator()
+        stats = stats_calc
         return stats.get_channel_stats(days=days)
     except Exception as e:
         logger.error(f"Error getting channel stats: {e}")
@@ -475,7 +465,7 @@ async def get_growth(
 ):
     """Get growth metrics (new vs returning users)."""
     try:
-        stats = _require_stats_calculator()
+        stats = stats_calc
         return stats.get_growth_metrics(days=days)
     except Exception as e:
         logger.error(f"Error getting growth metrics: {e}")
@@ -488,7 +478,7 @@ async def get_online_now(
 ):
     """Get currently online users (from last snapshot)."""
     try:
-        stats = _require_stats_calculator()
+        stats = stats_calc
         return stats.get_online_now()
     except Exception as e:
         logger.error(f"Error getting online users: {e}")
@@ -515,7 +505,7 @@ async def get_away_stats(
 ):
     """Get AFK/Away status statistics."""
     try:
-        stats = _require_stats_calculator()
+        stats = stats_calc
         return stats.get_away_stats(days=days, limit=limit)
     except Exception as e:
         logger.error(f"Error getting away stats: {e}")
@@ -529,7 +519,7 @@ async def get_mute_stats(
 ):
     """Get microphone/speaker mute and recording statistics."""
     try:
-        stats = _require_stats_calculator()
+        stats = stats_calc
         return stats.get_mute_stats(days=days)
     except Exception as e:
         logger.error(f"Error getting mute stats: {e}")
@@ -543,7 +533,7 @@ async def get_server_groups(
 ):
     """Get server group membership statistics."""
     try:
-        stats = _require_stats_calculator()
+        stats = stats_calc
         return stats.get_server_group_stats(days=days)
     except Exception as e:
         logger.error(f"Error getting server group stats: {e}")
@@ -558,7 +548,7 @@ async def get_channel_hoppers(
 ):
     """Get users who switch channels most frequently."""
     try:
-        stats = _require_stats_calculator()
+        stats = stats_calc
         return stats.get_channel_switches(days=days, limit=limit)
     except Exception as e:
         logger.error(f"Error getting channel hoppers: {e}")
@@ -573,7 +563,7 @@ async def get_connection_patterns(
 ):
     """Get connection/disconnection patterns and session statistics."""
     try:
-        stats = _require_stats_calculator()
+        stats = stats_calc
         return stats.get_connection_patterns(days=days, limit=limit)
     except Exception as e:
         logger.error(f"Error getting connection patterns: {e}")
@@ -601,7 +591,7 @@ async def get_lifetime_value(
     - Casual User (0-49 score)
     """
     try:
-        stats = _require_stats_calculator()
+        stats = stats_calc
         return stats.get_user_lifetime_value(days=days, limit=limit)
     except Exception as e:
         logger.error(f"Error getting LTV: {e}")
@@ -615,7 +605,7 @@ async def get_ltv_summary(
 ):
     """Get User Lifetime Value distribution summary."""
     try:
-        stats = _require_stats_calculator()
+        stats = stats_calc
         return stats.get_ltv_summary(days=days)
     except Exception as e:
         logger.error(f"Error getting LTV summary: {e}")

@@ -211,7 +211,7 @@ database:
 database:
   backend: postgresql
   connection_string: postgresql://user:password@localhost:5432/teamspeak_stats
-  path: ./data/ts_activity.sqlite  # Only used when backend=sqlite
+  path: ./data/ts_activity.sqlite  # Still required for analytics queries
 ```
 
 PostgreSQL configuration:
@@ -222,9 +222,8 @@ PostgreSQL configuration:
 **Current limitation**: Analytics/stats features currently require SQLite. When using PostgreSQL:
 - ✅ Data collection (poller) writes to PostgreSQL
 - ✅ Basic endpoints (`/health`, `/database`) use PostgreSQL
-- ❌ Stats/analytics endpoints (`/stats/*`, GraphQL) are disabled (API returns HTTP 503 and `/graphql` is not mounted)
-- ❌ CLI analytics commands also require SQLite data
-- For full PostgreSQL support, keep both databases or periodically export PostgreSQL data into a SQLite file for analytics
+- ⚠️ Stats/analytics endpoints (`/stats/*`, GraphQL, CLI) read from the SQLite file at `database.path`
+- Keep a SQLite replica (or periodically export PostgreSQL → SQLite) if you want analytics with a PostgreSQL writer
 
 ---
 

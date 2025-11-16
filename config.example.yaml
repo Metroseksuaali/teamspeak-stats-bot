@@ -80,11 +80,12 @@ database:
   # - postgresql: External database for high-throughput writes
   backend: "sqlite"
 
-  # SQLite database file path
-  # Stats/analytics endpoints (REST, GraphQL, CLI) only work with SQLite.
-  # When backend=postgresql, this path is ignored and stats endpoints are disabled.
+  # SQLite database file path (always required for analytics)
+  # Stats/analytics endpoints (REST, GraphQL, CLI) continue to read from this SQLite file
+  # even when backend=postgresql. Keep it in sync (e.g. via exports or replication)
+  # if you want analytics while writing new snapshots to PostgreSQL.
   # Relative paths are relative to the working directory.
-  # For Docker: use /app/data/ts_activity.sqlite to persist in volume.
+  # For Docker: use /app/data/ts_activity.sqlite to persist in a volume.
   path: "./data/ts_activity.sqlite"
 
   # PostgreSQL connection string (required when backend=postgresql)
