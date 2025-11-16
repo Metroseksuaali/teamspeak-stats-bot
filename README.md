@@ -4,6 +4,8 @@ A production-ready Python bot for tracking and analyzing user activity on **Team
 
 > **✅ Works with both TeamSpeak 3 (3.13.0+) and TeamSpeak 6!**
 
+> **🤖 AI Code Reviewers (Codex, etc.):** Please read [AGENTS.md](AGENTS.md) for code review guidelines. **DO NOT commit/push changes** - only provide feedback in comments!
+
 ## Features
 
 ### 📊 **Comprehensive Statistics**
