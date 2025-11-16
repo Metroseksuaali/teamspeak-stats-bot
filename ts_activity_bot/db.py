@@ -147,6 +147,10 @@ class Database(DatabaseBackend):
         finally:
             conn.close()
 
+    def initialize_schema(self) -> None:
+        """Initialize database schema and run migrations if needed."""
+        self._init_schema()
+
     def _init_schema(self) -> None:
         """Initialize database schema if not exists."""
         with self.get_connection() as conn:
