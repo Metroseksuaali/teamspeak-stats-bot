@@ -2,6 +2,7 @@
 Database management for TS6 Activity Bot.
 
 Handles SQLite schema creation, migrations, and data operations.
+Provides factory function for multi-backend support (SQLite, PostgreSQL).
 
 Copyright (C) 2025 Metroseksuaali
 Licensed under GNU AGPL v3.0 - see LICENSE file for details.
@@ -13,6 +14,8 @@ import time
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
+
+from ts_activity_bot.db_base import DatabaseBackend
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +104,7 @@ CREATE TABLE IF NOT EXISTS metadata (
 """
 
 
-class Database:
+class Database(DatabaseBackend):
     """SQLite database manager for TS6 activity tracking."""
 
     def __init__(self, db_path: str):
@@ -577,3 +580,44 @@ class Database:
             interval: Polling interval in seconds
         """
         self.set_metadata('poll_interval', str(interval))
+
+
+def create_database(config) -> DatabaseBackend:
+    """
+    Factory function to create database backend based on configuration.
+
+    Args:
+        config: DatabaseConfig or full Config object
+
+    Returns:
+        DatabaseBackend: Database backend instance (SQLite or PostgreSQL)
+
+    Raises:
+        ValueError: If backend type is not supported
+        ImportError: If required database driver is not installed
+    """
+    # Extract database config if full config object is passed
+    db_config = getattr(config, 'database', config)
+
+    backend = db_config.backend.lower()
+
+    if backend == 'sqlite':
+        logger.info(f"Using SQLite database backend: {db_config.path}")
+        return Database(db_config.path)
+
+    elif backend == 'postgresql':
+        if not db_config.connection_string:
+            raise ValueError("PostgreSQL backend requires connection_string in config")
+
+        try:
+            from ts_activity_bot.db_postgres import PostgreSQLBackend
+        except ImportError as e:
+            raise ImportError(
+                "PostgreSQL support requires psycopg2. Install with: pip install psycopg2-binary"
+            ) from e
+
+        logger.info(f"Using PostgreSQL database backend")
+        return PostgreSQLBackend(db_config.connection_string)
+
+    else:
+        raise ValueError(f"Unsupported database backend: {backend}")

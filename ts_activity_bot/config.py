@@ -61,8 +61,20 @@ class PollingConfig(BaseSettings):
 class DatabaseConfig(BaseSettings):
     """Database settings."""
 
-    path: str = Field("./data/ts_activity.sqlite", description="SQLite database file path")
+    backend: str = Field("sqlite", description="Database backend: sqlite or postgresql")
+    path: str = Field("./data/ts_activity.sqlite", description="SQLite database file path (used when backend=sqlite)")
+    connection_string: Optional[str] = Field(None, description="PostgreSQL connection string (used when backend=postgresql)")
     retention_days: Optional[int] = Field(None, description="Data retention period in days (null = keep forever)")
+
+    @field_validator("backend")
+    @classmethod
+    def validate_backend(cls, v: str) -> str:
+        """Ensure backend is valid."""
+        valid_backends = ["sqlite", "postgresql"]
+        v_lower = v.lower()
+        if v_lower not in valid_backends:
+            raise ValueError(f"backend must be one of: {', '.join(valid_backends)}")
+        return v_lower
 
     @field_validator("retention_days")
     @classmethod

@@ -9,16 +9,30 @@ Licensed under GNU AGPL v3.0 - see LICENSE file for details.
 
 from typing import List, Optional
 
+import logging
 import strawberry
 from strawberry.fastapi import GraphQLRouter
 
-from ts_activity_bot.config import get_config
 from ts_activity_bot.stats import StatsCalculator
 
+logger = logging.getLogger(__name__)
 
-# Load config and initialize stats
-config = get_config()
-stats_calc = StatsCalculator(config.database.path, config.polling.interval_seconds)
+stats_calc: Optional[StatsCalculator] = None
+
+
+def set_stats_calculator(calculator: Optional[StatsCalculator]) -> None:
+    """Allow FastAPI app to supply the shared stats calculator instance."""
+    global stats_calc
+    stats_calc = calculator
+
+
+def _require_stats_calculator() -> StatsCalculator:
+    """Return stats calculator or raise if analytics backend is unavailable."""
+    if stats_calc is None:
+        raise RuntimeError(
+            "Stats calculator is not configured. GraphQL analytics require a SQLite backend."
+        )
+    return stats_calc
 
 
 # GraphQL Types
@@ -176,7 +190,8 @@ class Query:
         limit: int = 10
     ) -> List[User]:
         """Get top users by online time"""
-        users = stats_calc.get_top_users(days=days, limit=limit)
+        stats = _require_stats_calculator()
+        users = stats.get_top_users(days=days, limit=limit)
         return [
             User(
                 client_uid=u['client_uid'],
@@ -195,7 +210,8 @@ class Query:
         days: Optional[int] = 30
     ) -> Optional[UserDetailed]:
         """Get detailed statistics for a specific user"""
-        user = stats_calc.get_user_stats(client_uid, days=days)
+        stats = _require_stats_calculator()
+        user = stats.get_user_stats(client_uid, days=days)
         if not user:
             return None
 
@@ -221,7 +237,8 @@ class Query:
     @strawberry.field
     def channels(self, days: Optional[int] = 7) -> List[Channel]:
         """Get channel statistics"""
-        channels = stats_calc.get_channel_stats(days=days)
+        stats = _require_stats_calculator()
+        channels = stats.get_channel_stats(days=days)
         return [
             Channel(
                 channel_id=ch['channel_id'],
@@ -236,7 +253,8 @@ class Query:
     @strawberry.field
     def hourly_heatmap(self, days: Optional[int] = 7) -> List[HourlyData]:
         """Get hourly activity heatmap"""
-        data = stats_calc.get_hourly_heatmap(days=days)
+        stats = _require_stats_calculator()
+        data = stats.get_hourly_heatmap(days=days)
         return [
             HourlyData(
                 hour=h['hour'],
@@ -249,7 +267,8 @@ class Query:
     @strawberry.field
     def daily_activity(self, days: Optional[int] = 30) -> List[DailyData]:
         """Get daily activity by day of week"""
-        data = stats_calc.get_daily_activity(days=days)
+        stats = _require_stats_calculator()
+        data = stats.get_daily_activity(days=days)
         return [
             DailyData(
                 day_of_week=d['day_of_week'],
@@ -263,7 +282,8 @@ class Query:
     @strawberry.field
     def summary(self, days: Optional[int] = 7) -> Summary:
         """Get overall statistics summary"""
-        data = stats_calc.get_summary(days=days)
+        stats = _require_stats_calculator()
+        data = stats.get_summary(days=days)
         return Summary(
             period_days=data['period_days'],
             total_snapshots=data['total_snapshots'],
@@ -279,7 +299,8 @@ class Query:
         limit: int = 10
     ) -> List[PeakTime]:
         """Get peak activity times"""
-        peaks = stats_calc.get_peak_times(days=days, limit=limit)
+        stats = _require_stats_calculator()
+        peaks = stats.get_peak_times(days=days, limit=limit)
         return [
             PeakTime(
                 timestamp=p['timestamp'],
@@ -292,7 +313,8 @@ class Query:
     @strawberry.field
     def online_now(self) -> List[OnlineUser]:
         """Get currently online users"""
-        users = stats_calc.get_online_now()
+        stats = _require_stats_calculator()
+        users = stats.get_online_now()
         return [
             OnlineUser(
                 client_uid=u['client_uid'],
@@ -333,7 +355,8 @@ class Query:
         - Regular User (50-79 score)
         - Casual User (0-49 score)
         """
-        users = stats_calc.get_user_lifetime_value(days=days, limit=limit)
+        stats = _require_stats_calculator()
+        users = stats.get_user_lifetime_value(days=days, limit=limit)
         return [
             LTVUser(
                 client_uid=u['client_uid'],
@@ -358,7 +381,8 @@ class Query:
     @strawberry.field
     def ltv_summary(self, days: Optional[int] = None) -> LTVSummary:
         """Get User Lifetime Value distribution summary"""
-        data = stats_calc.get_ltv_summary(days=days)
+        stats = _require_stats_calculator()
+        data = stats.get_ltv_summary(days=days)
         return LTVSummary(
             period_days=data['period_days'],
             total_users=data['total_users'],
@@ -374,7 +398,8 @@ class Query:
     @strawberry.field
     def growth_metrics(self, days: int = 7) -> GrowthMetrics:
         """Get user growth metrics"""
-        data = stats_calc.get_growth_metrics(days=days)
+        stats = _require_stats_calculator()
+        data = stats.get_growth_metrics(days=days)
         return GrowthMetrics(
             period_days=data['period_days'],
             total_unique_users=data['total_unique_users'],
@@ -388,6 +413,9 @@ class Query:
 schema = strawberry.Schema(query=Query)
 
 
-def create_graphql_router() -> GraphQLRouter:
-    """Create GraphQL router for FastAPI integration"""
+def create_graphql_router() -> Optional[GraphQLRouter]:
+    """Create GraphQL router for FastAPI integration when analytics is available."""
+    if stats_calc is None:
+        logger.info("Skipping GraphQL router registration because stats backend is unavailable")
+        return None
     return GraphQLRouter(schema, path="/graphql")
