@@ -13,11 +13,11 @@ from pathlib import Path
 from typing import Optional
 
 import yaml
-from pydantic import Field, field_validator
+from pydantic import BaseModel, Field, field_validator
 from pydantic_settings import BaseSettings
 
 
-class TeamspeakConfig(BaseSettings):
+class TeamspeakConfig(BaseModel):
     """TeamSpeak server connection settings."""
 
     base_url: str = Field(..., description="WebQuery base URL (e.g., https://ts.example.com:10443)")
@@ -42,7 +42,7 @@ class TeamspeakConfig(BaseSettings):
         return v
 
 
-class PollingConfig(BaseSettings):
+class PollingConfig(BaseModel):
     """Polling behavior settings."""
 
     interval_seconds: int = Field(30, description="Polling interval in seconds")
@@ -58,7 +58,7 @@ class PollingConfig(BaseSettings):
         return v
 
 
-class DatabaseConfig(BaseSettings):
+class DatabaseConfig(BaseModel):
     """Database settings."""
 
     backend: str = Field("sqlite", description="Database backend: sqlite or postgresql")
@@ -85,7 +85,7 @@ class DatabaseConfig(BaseSettings):
         return v
 
 
-class LoggingConfig(BaseSettings):
+class LoggingConfig(BaseModel):
     """Logging settings."""
 
     level: str = Field("INFO", description="Log level: DEBUG, INFO, WARNING, ERROR")
@@ -104,7 +104,7 @@ class LoggingConfig(BaseSettings):
         return v_upper
 
 
-class APIConfig(BaseSettings):
+class APIConfig(BaseModel):
     """API server settings."""
 
     enabled: bool = Field(True, description="Enable FastAPI web server")
