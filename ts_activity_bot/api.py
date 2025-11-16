@@ -89,7 +89,7 @@ async def verify_api_key(
     if not api_key:
         raise HTTPException(status_code=401, detail="API key required")
 
-    if api_key != config.api.api_key:
+    if api_key != config.api.get_auth_token():
         raise HTTPException(status_code=403, detail="Invalid API key")
 
     return api_key

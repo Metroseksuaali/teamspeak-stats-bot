@@ -61,10 +61,10 @@ A production-ready Python bot for tracking and analyzing user activity on **Team
    ```yaml
    teamspeak:
      base_url: "https://your-ts-server.com:10443"
-     api_key: "YOUR_TEAMSPEAK_API_KEY"
+     api_key: "YOUR_TEAMSPEAK_API_KEY"  # From TeamSpeak: apikeyadd scope=manage
 
    api:
-     api_key: "YOUR_SECRET_API_KEY"  # Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
+     bot_token: "YOUR_SECRET_BOT_TOKEN"  # Generate with: python -c "import secrets; print(secrets.token_urlsafe(32))"
    ```
 
 3. **Start services**:
@@ -181,8 +181,8 @@ See `config.example.yaml` for all options with detailed comments. Key settings:
 
 ```yaml
 teamspeak:
-  base_url: "https://your-server.com:10443"  # Your TS6 server
-  api_key: "YOUR_API_KEY"                     # WebQuery API key
+  base_url: "https://your-server.com:10443"  # Your TS server
+  api_key: "YOUR_TEAMSPEAK_API_KEY"          # TeamSpeak WebQuery API key (from apikeyadd)
   verify_ssl: true                            # false for self-signed certs
 
 polling:
@@ -195,7 +195,7 @@ database:
   retention_days: null                        # null = keep forever, or set days
 
 api:
-  api_key: "SECRET_KEY"                       # Protect your stats!
+  bot_token: "YOUR_SECRET_BOT_TOKEN"          # Bot API token (your own - not TeamSpeak's)
   port: 8080
 ```
 
@@ -825,12 +825,14 @@ chmod -R 755 ./data
 
 **Problem**: "Unauthorized" or "Forbidden" when calling bot's REST API (not TeamSpeak)
 
-**Solution**: Check `X-API-Key` header matches `api.api_key` in config:
+**Solution**: Check `X-API-Key` header matches `api.bot_token` in config:
 ```bash
 # Correct usage
-curl -H "X-API-Key: YOUR_BOT_API_KEY" http://localhost:8080/stats/summary
+curl -H "X-API-Key: YOUR_BOT_TOKEN" http://localhost:8080/stats/summary
 
-# Note: This is different from TeamSpeak API key
+# Note: This is different from TeamSpeak API key (teamspeak.api_key)
+# - teamspeak.api_key = TeamSpeak server API (for bot to connect to TS)
+# - api.bot_token = Bot's own API token (for clients to access bot's REST API)
 ```
 
 ---
