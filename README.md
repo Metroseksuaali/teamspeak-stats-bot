@@ -79,7 +79,7 @@ A production-ready Python bot for tracking and analyzing user activity on **Team
 
 5. **Access API**:
    ```bash
-   curl -H "X-API-Key: YOUR_SECRET_API_KEY" http://localhost:8080/stats/summary?days=7
+   curl -H "X-API-Key: test-bot-token-123" http://localhost:8080/stats/summary?days=7
    ```
 
 6. **Use CLI**:
@@ -309,10 +309,10 @@ All endpoints (except `/health`) require API key authentication:
 
 ```bash
 # Via header (recommended)
-curl -H "X-API-Key: YOUR_API_KEY" http://localhost:8080/stats/summary
+curl -H "X-API-Key: YOUR_BOT_TOKEN" http://localhost:8080/stats/summary
 
 # Via query parameter
-curl http://localhost:8080/stats/summary?api_key=YOUR_API_KEY
+curl http://localhost:8080/stats/summary?api_key=YOUR_BOT_TOKEN
 ```
 
 ### Available Endpoints
@@ -542,7 +542,7 @@ services:
 ```yaml
 teamspeak:
   base_url: "http://localhost:10080"  # Use localhost
-  api_key: "YOUR_API_KEY"
+  api_key: "YOUR_TEAMSPEAK_API_KEY"
   verify_ssl: false  # No SSL needed for localhost
 ```
 
@@ -575,13 +575,13 @@ sudo ufw allow 10443/tcp  # For HTTPS
 ```yaml
 teamspeak:
   base_url: "http://teamspeak-server.example.com:10080"  # Use server hostname/IP
-  api_key: "YOUR_API_KEY"
+  api_key: "YOUR_TEAMSPEAK_API_KEY"
   verify_ssl: true  # Or false for self-signed certs
 ```
 
 3. **Test connection**:
 ```bash
-curl -H "x-api-key: YOUR_API_KEY" http://teamspeak-server.example.com:10080/1/serverinfo
+curl -H "x-api-key: YOUR_TEAMSPEAK_API_KEY" http://teamspeak-server.example.com:10080/1/serverinfo
 ```
 
 4. **Start bot**:
@@ -635,7 +635,7 @@ networks:
 ```yaml
 teamspeak:
   base_url: "http://<teamspeak-container-name>:10080"  # Use container name as hostname
-  api_key: "YOUR_API_KEY"
+  api_key: "YOUR_TEAMSPEAK_API_KEY"
   verify_ssl: false
 ```
 
@@ -663,7 +663,7 @@ pip install -r requirements.txt
 ```yaml
 teamspeak:
   base_url: "http://localhost:10080"
-  api_key: "YOUR_API_KEY"
+  api_key: "YOUR_TEAMSPEAK_API_KEY"
   verify_ssl: false
 ```
 
@@ -694,7 +694,7 @@ Same as Scenario 2, but run bot directly with Python:
 ```yaml
 teamspeak:
   base_url: "http://teamspeak-server.example.com:10080"
-  api_key: "YOUR_API_KEY"
+  api_key: "YOUR_TEAMSPEAK_API_KEY"
 ```
 
 3. **Run bot**:
@@ -781,7 +781,7 @@ apikeyadd scope=manage
 **Diagnosis**:
 ```bash
 # From bot machine, test if WebQuery port is reachable:
-curl -H "x-api-key: YOUR_KEY" http://teamspeak-server:10080/1/serverinfo
+curl -H "x-api-key: YOUR_TEAMSPEAK_API_KEY" http://teamspeak-server:10080/1/serverinfo
 
 # If you get "Connection refused" or timeout → firewall blocking
 # If you get 401 → API key issue
@@ -834,7 +834,7 @@ serverlist
 
 **Solutions**:
 1. Verify `base_url` is correct (check port: 10080 for HTTP, 10443 for HTTPS)
-2. Check API key is valid: `curl -H "x-api-key: YOUR_KEY" https://your-server:10443/1/serverinfo`
+2. Check API key is valid: `curl -H "x-api-key: YOUR_TEAMSPEAK_API_KEY" https://your-server:10443/1/serverinfo`
 3. If using self-signed cert, set `verify_ssl: false`
 4. Check firewall allows outbound connections from bot to TS server
 5. For Docker deployments on same host: use `network_mode: "host"` and `base_url: "http://localhost:10080"`
