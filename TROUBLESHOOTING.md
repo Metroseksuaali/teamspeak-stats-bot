@@ -21,6 +21,46 @@ Invoke-WebRequest -Uri "http://localhost:10080/1/serverinfo" -Headers $headers
 
 ### Possible Causes & Solutions
 
+#### 0. **TeamSpeak Query IP Allowlist Blocking Docker Network (MOST COMMON)**
+
+**Symptom:** API key works from Windows host but bot gets 401 errors.
+
+**Root Cause:** TeamSpeak WebQuery has an IP allowlist that by default only allows `127.0.0.1` and `::1`. When the bot runs in a Docker container, it connects from a different IP address (Docker bridge network, e.g., `172.20.0.x`), which gets blocked.
+
+**Check TeamSpeak logs:**
+```powershell
+docker compose -f docker-compose.test.yml logs teamspeak | Select-String "query_ip_allowlist"
+```
+
+If you see:
+```
+updated query_ip_allowlist ips: 127.0.0.1/32, ::1/128,
+```
+
+This means only localhost is allowed.
+
+**Solution:** Add the `TS3SERVER_QUERY_IP_ALLOWLIST` environment variable to allow Docker network access.
+
+Edit `docker-compose.test.yml`:
+
+```yaml
+teamspeak:
+  environment:
+    - TS3SERVER_LICENSE=accept
+    - TS3SERVER_QUERY_PROTOCOLS=raw,ssh,http
+    # Allow WebQuery API access from Docker network (fixes 401 errors)
+    - TS3SERVER_QUERY_IP_ALLOWLIST=0.0.0.0/0
+```
+
+**Then restart:**
+
+```powershell
+docker compose -f docker-compose.test.yml down
+docker compose -f docker-compose.test.yml up -d
+```
+
+**Note for production:** Instead of `0.0.0.0/0` (allows all IPs), use your specific Docker network CIDR, e.g., `172.20.0.0/16`.
+
 #### 1. **API Key Not Configured**
 
 **Check:** Open `config.test.yaml` and look for:

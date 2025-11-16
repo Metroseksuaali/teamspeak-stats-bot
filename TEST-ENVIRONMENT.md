@@ -116,9 +116,24 @@ rm -rf test-data test-logs
 
 ### Poller shows "401 Unauthorized"
 
+**Most common cause:** TeamSpeak Query IP allowlist is blocking Docker network.
+
+**Solution:**
+
+The `docker-compose.test.yml` file should already have this fix. If you're still getting 401 errors, check that the TeamSpeak service has:
+
+```yaml
+environment:
+  - TS3SERVER_QUERY_IP_ALLOWLIST=0.0.0.0/0
+```
+
+**Other possible causes:**
+
 - Check that you copied the correct API key from TeamSpeak logs
 - Make sure you updated `config.test.yaml` with the real API key
-- API key should be the long string starting with the container name
+- API key should be the long alphanumeric string from the logs
+
+**More details:** See [TROUBLESHOOTING.md](TROUBLESHOOTING.md)
 
 ### TeamSpeak container won't start
 

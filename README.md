@@ -727,7 +727,46 @@ HTTP error 401: {"status":{"code":5122,"extra_message":"invalid api key","messag
 
 **Common Causes & Solutions**:
 
-#### 1. Invalid or Expired API Key
+#### 1. TeamSpeak Query IP Allowlist Blocking Docker Network ⚠️ MOST COMMON IN DOCKER
+
+**Symptoms**: API key works from host machine but bot in Docker container gets 401 errors.
+
+**Root Cause**: TeamSpeak WebQuery has an IP allowlist that by default only allows `127.0.0.1` and `::1`. Docker containers connect from bridge network IPs (e.g., `172.20.0.x`), which get blocked.
+
+**Diagnosis**:
+```bash
+# Check TeamSpeak logs for IP allowlist
+docker logs ts3-server | grep query_ip_allowlist
+
+# If you see: "query_ip_allowlist ips: 127.0.0.1/32, ::1/128"
+# This means only localhost is allowed → Docker network is blocked
+```
+
+**Solution**: Allow Docker network in TeamSpeak configuration.
+
+For test environment (`docker-compose.test.yml`):
+```yaml
+teamspeak:
+  environment:
+    - TS3SERVER_QUERY_IP_ALLOWLIST=0.0.0.0/0  # Allows all IPs (test only!)
+```
+
+For production (more secure):
+```yaml
+teamspeak:
+  environment:
+    # Allow specific Docker network CIDR
+    - TS3SERVER_QUERY_IP_ALLOWLIST=172.16.0.0/12,127.0.0.1/32
+```
+
+Then restart TeamSpeak container:
+```bash
+docker restart ts3-server
+```
+
+**See also**: [TROUBLESHOOTING.md](TROUBLESHOOTING.md) for detailed guide.
+
+#### 2. Invalid or Expired API Key
 **Solution**: Generate a new API key:
 ```bash
 ssh serveradmin@your-server.com -p 10022
@@ -736,7 +775,7 @@ apikeyadd scope=manage
 # Copy the new key to config.yaml
 ```
 
-#### 2. WebQuery Port Not Accessible (Firewall/Network Issue) ⚠️ MOST COMMON
+#### 3. WebQuery Port Not Accessible (Firewall/Network Issue)
 **Symptoms**: 401 error when connecting from different machine, but works on localhost.
 
 **Diagnosis**:
@@ -779,7 +818,7 @@ sudo netstat -tlnp | grep 10080
 
 **Security Recommendation**: If possible, use Solution A (localhost with host network). Only expose WebQuery ports (10080/10443) to the network if absolutely necessary. These ports should **not** be exposed to the public internet.
 
-#### 3. Wrong Virtual Server ID
+#### 4. Wrong Virtual Server ID
 **Solution**: Verify your server ID:
 ```bash
 ssh serveradmin@your-server.com -p 10022
