@@ -38,6 +38,8 @@ class TeamSpeakQueryClient:
 
         # Debug: Verify API key is configured (does not expose credential details)
         logger.debug(f"API key configured: {bool(self.api_key)}")
+        if self.api_key:
+            logger.debug(f"API key length: {len(self.api_key)}, starts with: {self.api_key[:3]}..., ends with: ...{self.api_key[-3:]}")
 
         # Create HTTP client with connection pooling
         self.client = httpx.Client(
@@ -166,9 +168,16 @@ class TeamSpeakQueryClient:
                 '-groups': ''
             })
 
+            logger.debug(f"Raw API response: {len(clients)} clients received")
+            if clients:
+                logger.debug(f"Sample client types: {[c.get('client_type') for c in clients[:3]]}")
+
             # Filter out query clients if configured
             if not self.include_query_clients:
-                clients = [c for c in clients if c.get('client_type', 0) == 0]
+                original_count = len(clients)
+                # Note: TeamSpeak API returns client_type as string ('0' or '1')
+                clients = [c for c in clients if str(c.get('client_type', 0)) == '0']
+                logger.debug(f"Filtered query clients: {original_count} -> {len(clients)} (include_query_clients={self.include_query_clients})")
 
             logger.info(f"Fetched {len(clients)} clients from TeamSpeak server")
             return clients
