@@ -175,7 +175,8 @@ class TeamSpeakQueryClient:
             # Filter out query clients if configured
             if not self.include_query_clients:
                 original_count = len(clients)
-                clients = [c for c in clients if c.get('client_type', 0) == 0]
+                # Note: TeamSpeak API returns client_type as string ('0' or '1')
+                clients = [c for c in clients if str(c.get('client_type', 0)) == '0']
                 logger.debug(f"Filtered query clients: {original_count} -> {len(clients)} (include_query_clients={self.include_query_clients})")
 
             logger.info(f"Fetched {len(clients)} clients from TeamSpeak server")
